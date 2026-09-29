@@ -26,6 +26,71 @@ services:
 
     restart: unless-stopped
 
+  benchmark-db:
+    image: postgres:16
+    container_name: aegisops-benchmark-db
+
+    environment:
+      POSTGRES_DB: ${BENCHMARK_POSTGRES_DB}
+      POSTGRES_USER: ${BENCHMARK_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${BENCHMARK_POSTGRES_PASSWORD}
+
+    volumes:
+      - benchmark_postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${BENCHMARK_POSTGRES_USER} -d ${BENCHMARK_POSTGRES_DB}"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+    restart: unless-stopped
+
+
+  benchmark-redis:
+    image: redis:7-alpine
+    container_name: aegisops-benchmark-redis
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+    restart: unless-stopped
+
+
+  benchmark-api:
+    build:
+      context: ./benchmark
+
+    container_name: aegisops-benchmark-api
+
+    environment:
+      BENCHMARK_DB_HOST: benchmark-db
+      BENCHMARK_DB_PORT: 5432
+      BENCHMARK_DB_NAME: ${BENCHMARK_POSTGRES_DB}
+      BENCHMARK_DB_USER: ${BENCHMARK_POSTGRES_USER}
+      BENCHMARK_DB_PASSWORD: ${BENCHMARK_POSTGRES_PASSWORD}
+
+      BENCHMARK_REDIS_HOST: benchmark-redis
+      BENCHMARK_REDIS_PORT: 6379
+
+    ports:
+      - "8001:8000"
+
+    depends_on:
+      benchmark-db:
+        condition: service_healthy
+      benchmark-redis:
+        condition: service_healthy
+
+    restart: unless-stopped
 
 volumes:
   postgres_data:
+  benchmark_postgres_data:
