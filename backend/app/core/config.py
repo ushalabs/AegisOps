@@ -19,6 +19,13 @@ class Settings:
     postgres_password = os.getenv("POSTGRES_PASSWORD")
     postgres_host = os.getenv("POSTGRES_HOST", "localhost")
     postgres_port = int(os.getenv("POSTGRES_PORT", "5432"))
+    prometheus_url: str = os.getenv(
+        "PROMETHEUS_URL",
+        "http://127.0.0.1:9090",)
+
+    incident_detection_interval_seconds: int = int(
+        os.getenv("INCIDENT_DETECTION_INTERVAL_SECONDS", "10")
+    )
 
 
 settings = Settings()
