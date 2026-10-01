@@ -27,5 +27,10 @@ class Settings:
         os.getenv("INCIDENT_DETECTION_INTERVAL_SECONDS", "10")
     )
 
+    n8n_incident_webhook_url: str = os.getenv(
+    "N8N_INCIDENT_WEBHOOK_URL",
+    "http://127.0.0.1:5678/webhook/aegisops-incident",
+    )
+
 
 settings = Settings()

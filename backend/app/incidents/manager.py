@@ -10,6 +10,8 @@ from app.incidents.repository import (
     update_incident_last_seen,
 )
 
+from app.orchestration.n8n import notify_incident_created
+
 
 def process_detection_result(result: DetectionResult) -> dict:
     fingerprint = build_fingerprint(result)
@@ -40,11 +42,30 @@ def process_detection_result(result: DetectionResult) -> dict:
 
         incident_id = create_incident(result)
 
+        notify_incident_created(
+            incident_id=incident_id,
+            result=result,
+        )
+
         return {
             "rule_key": result.rule_key,
             "action": "CREATED",
             "incident_id": incident_id,
         }
+
+    if open_incident:
+        resolve_incident(fingerprint)
+
+        return {
+            "rule_key": result.rule_key,
+            "action": "RESOLVED",
+            "incident_id": open_incident[0],
+        }
+
+    return {
+        "rule_key": result.rule_key,
+        "action": "HEALTHY",
+    }
 
     if open_incident:
         resolve_incident(fingerprint)

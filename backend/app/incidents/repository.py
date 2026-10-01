@@ -107,3 +107,30 @@ def resolve_incident(fingerprint: str):
                 """,
                 (fingerprint,),
             )
+
+def get_incident_by_id(incident_id: int):
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    id,
+                    fingerprint,
+                    rule_key,
+                    title,
+                    service,
+                    severity,
+                    status,
+                    trigger_value,
+                    threshold,
+                    first_detected_at,
+                    last_seen_at,
+                    resolved_at
+                FROM incidents
+                WHERE id = %s
+                LIMIT 1;
+                """,
+                (incident_id,),
+            )
+
+            return cursor.fetchone()

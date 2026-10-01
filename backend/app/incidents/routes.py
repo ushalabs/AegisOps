@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.db.database import get_connection
 from app.incidents.manager import run_detection_cycle
-
+from app.incidents.repository import get_incident_by_id
 
 router = APIRouter(
     prefix="/incidents",
@@ -77,4 +77,36 @@ def list_incidents():
         raise HTTPException(
             status_code=503,
             detail=f"Failed to retrieve incidents: {exc}",
+        ) from exc
+
+@router.get("/{incident_id}")
+def get_incident(incident_id: int):
+    try:
+        row = get_incident_by_id(incident_id)
+
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Incident not found",
+            )
+
+        return {
+            "id": row[0],
+            "fingerprint": row[1],
+            "rule_key": row[2],
+            "title": row[3],
+            "service": row[4],
+            "severity": row[5],
+            "status": row[6],
+            "trigger_value": row[7],
+            "threshold": row[8],
+            "first_detected_at": row[9],
+            "last_seen_at": row[10],
+            "resolved_at": row[11],
+        }
+
+    except psycopg.Error as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to retrieve incident: {exc}",
         ) from exc

@@ -4,8 +4,8 @@ AegisOps is a modular AI-powered incident operations platform being built to det
 
 The project is being developed incrementally so each architectural layer is understood before higher-level orchestration and AI reasoning are added.
 
-> **Current status:** Phase 3 complete — Incident Detection Engine
-> **Next phase:** Phase 4 — Advanced Workflow Orchestration
+> **Current status:** Phase 4 complete — Advanced Workflow Orchestration
+> **Next phase:** Phase 5 — LLM Investigation v1
 
 ---
 
@@ -29,6 +29,11 @@ flowchart TD
 
     M[AegisOps FastAPI] --> K
     M --> L
+    K -->|CREATE event via HTTP POST| O[n8n production webhook]
+    O --> P[Severity routing and live status recheck]
+    P -->|OPEN| Q[Investigation Intake sub-workflow]
+    P -->|RESOLVED| R[Skip recovered incident]
+    P -->|GET incident| M
 
     subgraph Benchmark["Controlled Benchmark Environment"]
         A
@@ -43,6 +48,13 @@ flowchart TD
         G
     end
 
+    subgraph Orchestration["n8n / local npm"]
+        O
+        P
+        Q
+        R
+    end
+
     subgraph Core["AegisOps Core"]
         H
         I
@@ -55,7 +67,7 @@ flowchart TD
 
 The benchmark environment is deliberately separate from the AegisOps core. It produces controlled failures and telemetry; AegisOps consumes that telemetry and stores its own incident state independently.
 
-All local infrastructure services are currently managed through the root `docker-compose.yml`, while the AegisOps FastAPI backend runs locally during development.
+Benchmark, database, and monitoring services are managed by the root `docker-compose.yml`. During local Phase 4 development, the AegisOps FastAPI backend and the existing npm-based n8n instance run on Windows. n8n is not required to be in Docker for the workflow to function.
 
 ---
 
@@ -67,7 +79,8 @@ All local infrastructure services are currently managed through the root `docker
 | Phase 1 — Benchmark Environment | ✅ Complete | Breakable FastAPI target with dedicated PostgreSQL, Redis, real operations, and controlled failures |
 | Phase 2 — Monitoring & Telemetry | ✅ Complete | Prometheus, cAdvisor, Grafana, HTTP metrics, latency, 5xx rate, dependency health, container telemetry |
 | Phase 3 — Incident Detection Engine | ✅ Complete | Prometheus ingestion, deterministic rules, severity, incident persistence, deduplication, automatic resolution |
-| Phase 4 — Advanced Workflow Orchestration | ⏳ Next | n8n workflows, webhooks, branching, retries, waits, and orchestration around incident events |
+| Phase 4 — Advanced Workflow Orchestration | ✅ Complete | Production webhook, severity routing, live incident recheck, timed handling, retries, recovery skip, and shared investigation intake |
+| Phase 5 — LLM Investigation v1 | ⏳ Next | Structured LLM investigation built on the normalized intake payload |
 
 Detailed phase documentation is available under:
 
@@ -146,6 +159,28 @@ This is still deterministic detection, not AI diagnosis. Root-cause reasoning is
 
 ---
 
+## Phase 4 — Real Incident Orchestration
+
+AegisOps now notifies n8n **once when an incident is created**, rather than starting another execution on every detection poll. The published n8n workflow routes by AegisOps-assigned severity and checks the authoritative incident state before continuing.
+
+HIGH and CRITICAL incidents are rechecked immediately. MEDIUM and LOW incidents wait 30 seconds and then recheck. Both branches use the same `Still Open?` decision, so recovered incidents cannot enter investigation intake.
+
+### Recovered incident — skip path
+
+The recovered-incident execution below shows a previously resolved HIGH Redis incident passing through the immediate GET and shared IF check. n8n takes the FALSE output and explicitly records `SKIPPED_RECOVERED`; investigation intake does not run.
+
+![n8n recovered incident follows the FALSE branch and is skipped](docs/screenshots/phase%204/n8n%2C%20false.png)
+
+### Active incident — investigation intake
+
+A fresh Redis outage created a new HIGH incident and automatically started the production n8n workflow. The live GET returned OPEN, so the TRUE output prepared a normalized incident context and called the reusable **AegisOps Investigation Intake** sub-workflow.
+
+![n8n active incident follows the TRUE branch into the shared intake workflow](docs/screenshots/phase%204/n8n%2C%20true.png)
+
+The intake currently returns `intake_status: RECEIVED` and `investigation_state: PENDING`. It does not yet perform AI investigation; that is the next phase. See the [Phase 4 implementation and verification notes](docs/phases/phase-04-workflow-orchestration.md).
+
+---
+
 ## Repository Structure
 
 ```text
@@ -168,6 +203,9 @@ AegisOps/
 │   │   ├── monitoring/
 │   │   │   ├── __init__.py
 │   │   │   └── prometheus.py
+│   │   ├── orchestration/
+│   │   │   ├── __init__.py
+│   │   │   └── n8n.py
 │   │   └── main.py
 │   ├── sql/
 │   │   └── 001_create_incidents.sql
@@ -193,15 +231,20 @@ AegisOps/
 │   │   ├── phase-00-project-foundation.md
 │   │   ├── phase-01-benchmark-environment.md
 │   │   ├── phase-02-monitoring-telemetry.md
-│   │   └── phase-03-incident-detection-engine.md
+│   │   ├── phase-03-incident-detection-engine.md
+│   │   └── phase-04-workflow-orchestration.md
 │   └── screenshots/
 │       ├── phase 2/
 │       │   ├── grafana.png
 │       │   └── stack-running.png
-│       └── phase 3/
-│           ├── grafana.png
-│           └── incidents.png
+│       ├── phase 3/
+│       │   ├── grafana.png
+│       │   └── incidents.png
+│       └── phase 4/
+│           ├── n8n, false.png
+│           └── n8n, true.png
 │
+├── n8n-workflows/            # Add actual n8n exports before committing
 ├── .env.example
 ├── .gitignore
 ├── docker-compose.yml
@@ -227,10 +270,10 @@ AegisOps/
 - Prometheus
 - cAdvisor
 - Grafana
+- n8n (existing local npm installation)
 
 ### Planned Later
 
-- n8n
 - Gemini
 - LangGraph
 - SentenceTransformers
@@ -252,13 +295,14 @@ GET  /health
 GET  /ready
 GET  /incidents
 POST /incidents/detect
+GET  /incidents/{incident_id}
 ```
 
 `/health` confirms that the FastAPI process is alive.
 
 `/ready` confirms that the AegisOps backend can reach its own PostgreSQL dependency.
 
-`GET /incidents` returns stored incident history.
+`GET /incidents` returns stored incident history, while `GET /incidents/{incident_id}` returns the latest state for an individual incident; n8n calls the latter before deciding whether to investigate.
 
 `POST /incidents/detect` manually runs one detection cycle for testing and debugging. Normal detection is performed automatically by the background worker.
 
@@ -365,6 +409,7 @@ Important local configuration now includes:
 POSTGRES_PORT=5432
 PROMETHEUS_URL=http://127.0.0.1:9090
 INCIDENT_DETECTION_INTERVAL_SECONDS=10
+N8N_INCIDENT_WEBHOOK_URL=http://127.0.0.1:5678/webhook/aegisops-incident
 ```
 
 The shared PostgreSQL default remains `5432`. Developers can override it in their local `.env` when the port is already in use.
@@ -381,6 +426,7 @@ Benchmark API         http://127.0.0.1:8001
 cAdvisor              http://127.0.0.1:8080
 Prometheus            http://127.0.0.1:9090
 Grafana               http://127.0.0.1:3000
+n8n (local npm)       http://127.0.0.1:5678
 ```
 
 ---
@@ -414,7 +460,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-The incident detector starts automatically with the FastAPI application.
+The incident detector starts automatically with FastAPI. Start the existing Windows n8n installation separately with `n8n`, open `http://127.0.0.1:5678`, and publish **AegisOps Incident Orchestration**. n8n and FastAPI currently share Windows localhost; moving either into a container requires reviewing the API and webhook URLs.
 
 ---
 
@@ -443,6 +489,7 @@ Detailed implementation notes:
 - [Phase 1 — Benchmark Environment](docs/phases/phase-01-benchmark-environment.md)
 - [Phase 2 — Monitoring & Telemetry](docs/phases/phase-02-monitoring-telemetry.md)
 - [Phase 3 — Incident Detection Engine](docs/phases/phase-03-incident-detection-engine.md)
+- [Phase 4 — Advanced Workflow Orchestration](docs/phases/phase-04-workflow-orchestration.md)
 
 ---
 
@@ -470,6 +517,14 @@ persist OPEN incidents
 deduplicate repeated detections
         ↓
 automatically RESOLVE incidents after recovery
+        ↓
+POST new incident events to n8n
+        ↓
+route severity and recheck current state
+        ↓
+investigate active incidents / skip recovered incidents
+        ↓
+pass normalized context to Investigation Intake
 ```
 
-The next milestone is **Phase 4 — Advanced Workflow Orchestration**, where n8n will begin coordinating workflows around incidents rather than AegisOps simply storing them.
+The next milestone is **Phase 5 — LLM Investigation v1**, which will add structured model-driven investigation after the reusable n8n intake. Export both n8n workflows to `n8n-workflows/` from the local instance before the Phase 4 commit; this README does not treat screenshots as executable workflow definitions.
