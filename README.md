@@ -4,8 +4,9 @@ AegisOps is a modular AI-powered incident operations platform being built to det
 
 The project is being developed incrementally so each architectural layer is understood before higher-level orchestration and AI reasoning are added.
 
-> **Current status:** Phase 5 complete — LLM Investigation v1
-> **Next phase:** Phase 6 — Embeddings & Knowledge Base
+> **Current status:** Phase 6 complete — Embeddings & Knowledge Base
+> **Next phase:** Phase 7 — RAG Pipeline
+> **Roadmap:** 7 of 21 phases complete (Phases 0–6)
 
 ---
 
@@ -40,6 +41,17 @@ flowchart TD
     T --> U[Pydantic validation]
     U --> L
     M -->|Saved report and investigation ID| Q
+
+    V[Sample documents and Markdown runbooks] --> W[Local MiniLM embeddings: 384 dimensions]
+    W --> X[(knowledge_documents / pgvector)]
+    V -->|Source text and metadata| X
+    X -.Stored in.-> L
+
+    subgraph Knowledge["Phase 6 / local knowledge base"]
+        V
+        W
+        X
+    end
 
     subgraph Benchmark["Controlled Benchmark Environment"]
         A
@@ -79,7 +91,7 @@ flowchart TD
 
 The benchmark environment is deliberately separate from the AegisOps core. It produces controlled failures and telemetry; AegisOps consumes that telemetry and stores its own incident state independently.
 
-Benchmark, database, and monitoring services are managed by the root `docker-compose.yml`. During local Phase 4 development, the AegisOps FastAPI backend and the existing npm-based n8n instance run on Windows. n8n is not required to be in Docker for the workflow to function.
+Benchmark, database, and monitoring services are managed by the root `docker-compose.yml`. During local development, the AegisOps FastAPI backend and the existing npm-based n8n instance run on Windows. Phase 6 also uses a local CPU-based SentenceTransformers model and a pgvector knowledge table in the AegisOps database. The knowledge base is not yet connected to Gemini; retrieval begins in Phase 7.
 
 ---
 
@@ -93,7 +105,8 @@ Benchmark, database, and monitoring services are managed by the root `docker-com
 | Phase 3 — Incident Detection Engine | ✅ Complete | Prometheus ingestion, deterministic rules, severity, incident persistence, deduplication, automatic resolution |
 | Phase 4 — Advanced Workflow Orchestration | ✅ Complete | Production webhook, severity routing, live incident recheck, timed handling, retries, recovery skip, and shared investigation intake |
 | Phase 5 — LLM Investigation v1 | ✅ Complete | Gemini structured hypotheses, Prometheus evidence snapshot, PostgreSQL report history, n8n investigation hand-off |
-| Phase 6 — Embeddings & Knowledge Base | ⏳ Next | Represent operational knowledge with embeddings and persistent vector storage |
+| Phase 6 — Embeddings & Knowledge Base | ✅ Complete | CPU-based 384-dimensional embeddings, pgvector schema, duplicate-safe sample/Markdown ingestion and six stored documents |
+| Phase 7 — RAG Pipeline | ⏳ Next | Document chunking, semantic retrieval and grounded context for Gemini |
 
 Detailed phase documentation is available under:
 
@@ -218,6 +231,28 @@ Read the [Phase 5 implementation and verification notes](docs/phases/phase-05-ll
 
 ---
 
+## Phase 6 — Embeddings & Knowledge Base
+
+Phase 6 adds a local knowledge store **without prematurely connecting it to Gemini**. SentenceTransformers generates normalized 384-dimensional vectors using `all-MiniLM-L6-v2`; the existing AegisOps PostgreSQL instance stores each vector with its original text, stable source key, model name and JSONB metadata.
+
+### Embedding experiment
+
+Before building persistence, we measured cosine similarity for the query *"The backend cannot connect to Redis"*. The Redis troubleshooting document scored `0.6564`, versus `0.1260` for the latency document and `0.0595` for PostgreSQL. This established a basic semantic ranking independently of the database; these scores are not relevance probabilities.
+
+### File-based knowledge ingestion
+
+The existing `seed_knowledge` script now reuses the same embedding and upsert modules as `ingest_runbooks`. Three Markdown runbooks cover Redis availability, benchmark PostgreSQL availability and API latency. A unique `source_key` makes repeated ingestion update existing documents instead of creating duplicate logical records.
+
+### PostgreSQL verification
+
+The screenshot below shows the **six verified records**: three sample documents and three file-backed runbooks. Every stored vector has 384 dimensions.
+
+![Six sample and runbook documents stored with 384-dimensional embeddings in pgvector](docs/screenshots/phase%206/knowledge-base.png)
+
+The runbooks remain initial procedures for the controlled benchmark. Longer-document chunking, semantic retrieval and adding retrieved context to Gemini are intentionally reserved for Phase 7. See the [Phase 6 implementation and verification notes](docs/phases/phase-06-embeddings-knowledge-base.md).
+
+---
+
 ## Repository Structure
 
 ```text
@@ -250,10 +285,18 @@ AegisOps/
 │   │   │   ├── repository.py
 │   │   │   ├── routes.py
 │   │   │   └── schemas.py
+│   │   ├── knowledge/
+│   │   │   ├── embeddings.py
+│   │   │   └── repository.py
 │   │   └── main.py
 │   ├── sql/
 │   │   ├── 001_create_incidents.sql
-│   │   └── 002_create_investigations.sql
+│   │   ├── 002_create_investigations.sql
+│   │   └── 003_create_knowledge_documents.sql
+│   ├── scripts/
+│   │   ├── embedding_demo.py
+│   │   ├── seed_knowledge.py
+│   │   └── ingest_runbooks.py
 │   ├── tests/
 │   ├── requirements.txt
 │   └── requirements-dev.txt
@@ -278,7 +321,12 @@ AegisOps/
 │   │   ├── phase-02-monitoring-telemetry.md
 │   │   ├── phase-03-incident-detection-engine.md
 │   │   ├── phase-04-workflow-orchestration.md
-│   │   └── phase-05-llm-investigation.md
+│   │   ├── phase-05-llm-investigation.md
+│   │   └── phase-06-embeddings-knowledge-base.md
+│   ├── runbooks/
+│   │   ├── redis-availability.md
+│   │   ├── postgresql-availability.md
+│   │   └── api-latency.md
 │   └── screenshots/
 │       ├── phase 2/
 │       │   ├── grafana.png
@@ -289,9 +337,11 @@ AegisOps/
 │       ├── phase 4/
 │       │   ├── n8n, false.png
 │       │   └── n8n, true.png
-│       └── phase 5/
-│           ├── gemini.png
-│           └── gemini-investigation-output.png
+│       ├── phase 5/
+│       │   ├── gemini.png
+│       │   └── gemini-investigation-output.png
+│       └── phase 6/
+│           └── knowledge-base.png
 │
 ├── n8n-workflows/            # Add actual n8n exports before committing
 ├── .env.example
@@ -322,10 +372,12 @@ AegisOps/
 - n8n (existing local npm installation)
 - Gemini (`google-genai`, structured JSON output)
 - Pydantic report validation
+- SentenceTransformers (`all-MiniLM-L6-v2`, CPU)
+- NumPy (cosine-similarity experiment)
+- pgvector Python adapter (`pgvector.psycopg`)
 
 ### Planned Later
 - LangGraph
-- SentenceTransformers
 - RAG
 - Slack / Discord notifications where useful
 - AWS
@@ -358,7 +410,7 @@ GET  /investigations/by-incident/{incident_id}
 
 `POST /incidents/detect` manually runs one detection cycle for testing and debugging. Normal detection is performed automatically by the background worker.
 
-`POST /investigations/{incident_id}/run` investigates an OPEN incident with a current evidence snapshot and saves the result. The two GET investigation endpoints expose full saved reports and concise per-incident history without making additional model calls.
+`POST /investigations/{incident_id}/run` investigates an OPEN incident with a current evidence snapshot and saves the result. The two GET investigation endpoints expose full saved reports and concise per-incident history without making additional model calls. Phase 6 adds a script-driven knowledge base; it does not introduce knowledge-base HTTP endpoints or alter the current investigator.
 
 ---
 
@@ -455,6 +507,27 @@ AegisOps now queries Prometheus directly through its HTTP API for incident detec
 
 ---
 
+## Knowledge Base
+
+Runbook ingestion and embeddings run locally against AegisOps PostgreSQL; they do not depend on Gemini credentials or n8n. The current table is `knowledge_documents` with `VECTOR(384)` embeddings. Re-ingestion uses stable `source_key` values to update existing records.
+
+From `backend/`:
+
+```powershell
+python -m scripts.seed_knowledge
+python -m scripts.ingest_runbooks
+```
+
+Verify stored dimensions using the existing Docker database:
+
+```powershell
+docker exec aegisops-postgres psql -U aegisops -d aegisops -c "SELECT source_key, source_type, vector_dims(embedding) AS dimensions FROM knowledge_documents ORDER BY id;"
+```
+
+At the end of Phase 6 the knowledge base contains **six documents**: three samples and three Markdown runbooks. Whole-file embeddings are sufficient for this small demonstration, but chunking and retrieval are deferred until Phase 7.
+
+---
+
 ## Configuration
 
 Important local configuration now includes:
@@ -547,6 +620,7 @@ Detailed implementation notes:
 - [Phase 3 — Incident Detection Engine](docs/phases/phase-03-incident-detection-engine.md)
 - [Phase 4 — Advanced Workflow Orchestration](docs/phases/phase-04-workflow-orchestration.md)
 - [Phase 5 — LLM Investigation v1](docs/phases/phase-05-llm-investigation.md)
+- [Phase 6 — Embeddings & Knowledge Base](docs/phases/phase-06-embeddings-knowledge-base.md)
 
 ---
 
@@ -592,4 +666,6 @@ validate and persist evidence + report in PostgreSQL
 return investigation ID and report to n8n
 ```
 
-The next milestone is **Phase 6 — Embeddings & Knowledge Base**. It will establish vector-backed operational knowledge separately from the later RAG and agentic investigation phases. Export the updated main and intake n8n workflows to `n8n-workflows/` from the local instance; screenshots are verification evidence, not executable workflow definitions.
+In parallel, Phase 6 now provides a local knowledge-ingestion path: Markdown runbooks and sample troubleshooting text are embedded with SentenceTransformers and stored in `knowledge_documents` with source metadata. The knowledge table is **not yet queried by Gemini**.
+
+The next milestone is **Phase 7 — RAG Pipeline**: document chunking, semantic search in pgvector and source-grounded context construction. The streamlined project roadmap has **21 total phases**, with Phases 0–6 complete. Export the current main and intake n8n workflows to `n8n-workflows/` from the local instance; screenshots are verification evidence, not executable workflow definitions.
