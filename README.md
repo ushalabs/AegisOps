@@ -4,9 +4,9 @@ AegisOps is a modular AI-powered incident operations platform being built to det
 
 The project is being developed incrementally so each architectural layer is understood before higher-level orchestration and AI reasoning are added.
 
-> **Current status:** Phase 7 complete — RAG Pipeline
-> **Next phase:** Phase 8 — Reranking & Context Engineering
-> **Roadmap:** 8 of 21 phases complete (Phases 0–7)
+> **Current status:** Phase 8 complete — Reranking & Context Engineering
+> **Next phase:** Phase 9 — Tool Calling Layer
+> **Roadmap:** 9 of 21 phases complete (Phases 0–8)
 
 ---
 
@@ -40,7 +40,9 @@ flowchart TD
     S --> RQ[Build incident retrieval query]
     RQ --> RE[Embed query with local MiniLM]
     RE --> RS[Top-3 cosine search across runbook chunks]
-    RS --> RC[Evidence plus retrieved excerpts and source IDs]
+    RS --> RR[Cross-encoder reranks retrieved candidates]
+    RR --> RB[Select up to 3 chunks within context budget]
+    RB --> RC[Evidence plus selected excerpts and source IDs]
     S --> RC
     RC --> T[Gemini structured report and cited runbook IDs]
     T --> U[Pydantic validation and source-ID membership check]
@@ -56,7 +58,7 @@ flowchart TD
     KC -.Chunks stored in.-> L
     KC --> RS
 
-    subgraph Knowledge["Phases 6–7 / knowledge ingestion and retrieval"]
+    subgraph Knowledge["Phases 6–8 / knowledge ingestion and retrieval"]
         V
         W
         X
@@ -85,7 +87,7 @@ flowchart TD
         R
     end
 
-    subgraph Investigation["Phases 5–7 / evidence-grounded RAG investigation"]
+    subgraph Investigation["Phases 5–8 / evidence-grounded RAG investigation"]
         S
         T
         U
@@ -103,7 +105,7 @@ flowchart TD
 
 The benchmark environment is deliberately separate from the AegisOps core. It produces controlled failures and telemetry; AegisOps consumes that telemetry and stores its own incident state independently.
 
-Benchmark, database, and monitoring services are managed by the root `docker-compose.yml`. During local development, AegisOps FastAPI and the existing npm-based n8n instance run on Windows. SentenceTransformers runs locally on the CPU; PostgreSQL with pgvector holds whole documents and runbook chunks. Phase 7 retrieves relevant chunks and supplies them to Gemini alongside incident-specific Prometheus evidence.
+Benchmark, database, and monitoring services are managed by the root `docker-compose.yml`. During local development, AegisOps FastAPI and the existing npm-based n8n instance run on Windows. SentenceTransformers runs locally on the CPU; PostgreSQL with pgvector holds whole documents and runbook chunks. Phase 8 reranks retrieved chunks and supplies a compact, source-aware selection to Gemini alongside incident-specific Prometheus evidence.
 
 ---
 
@@ -119,7 +121,8 @@ Benchmark, database, and monitoring services are managed by the root `docker-com
 | Phase 5 — LLM Investigation v1 | ✅ Complete | Gemini structured hypotheses, Prometheus evidence snapshot, PostgreSQL report history, n8n investigation hand-off |
 | Phase 6 — Embeddings & Knowledge Base | ✅ Complete | CPU-based 384-dimensional embeddings, pgvector schema, duplicate-safe sample/Markdown ingestion and six stored documents |
 | Phase 7 — RAG Pipeline | ✅ Complete | Heading-aware runbook chunks, 384-dimensional chunk embeddings, top-3 pgvector retrieval, Gemini context and validated source references |
-| Phase 8 — Reranking & Context Engineering | ⏳ Next | Improve retrieved-context selection, ranking and attribution |
+| Phase 8 — Reranking & Context Engineering | ✅ Complete | Local cross-encoder reranking, duplicate-free context, excerpt budget and saved similarity/rerank scores |
+| Phase 9 — Tool Calling Layer | ⏳ Next | Read-only tools for Prometheus, incident records and service logs |
 
 Detailed phase documentation is available under:
 
@@ -285,6 +288,26 @@ The existing investigation endpoint adds the retrieved excerpts to its Prometheu
 The verification accepted both `runbook:redis-availability#chunk-10` and `runbook:redis-availability#chunk-11`. This confirms that the references correspond to retrieved material; it does **not** independently prove that every claim in the generated report is supported by the cited runbook. Per-claim attribution and more advanced ranking are future improvements.
 
 Read the [Phase 7 implementation and verification notes](docs/phases/phase-07-rag-pipeline.md) for schema, ingestion, retrieval SQL, Gemini integration, limitations and test results.
+
+---
+
+## Phase 8 — Reranking & Context Engineering
+
+Phase 8 adds a local cross-encoder after pgvector retrieval. In the Redis verification query, reranking moved the Investigation section from third place to first, demonstrating a more task-focused ordering than vector similarity alone.
+
+### Before and after reranking
+
+The first screenshot compares the embedding search against the reranked results for a Redis troubleshooting question.
+
+![Redis runbook sections before and after cross-encoder reranking](docs/screenshots/phase%208/reranking.png)
+
+### Selected context for Gemini
+
+The context builder retains up to three unique chunks within a 2,400-character excerpt budget and preserves both similarity and rerank scores. The saved PostgreSQL investigation below confirms the strategy `vector_search_then_reranking` and a runbook source ID returned by Gemini.
+
+![Selected chunks, scores, retrieval strategy and source references from a saved investigation](docs/screenshots/phase%208/context-engineering.png)
+
+See [Phase 8 implementation and verification](docs/phases/phase-08-context-engineering.md).
 
 ---
 
@@ -579,7 +602,7 @@ PROMETHEUS_URL=http://127.0.0.1:9090
 INCIDENT_DETECTION_INTERVAL_SECONDS=10
 N8N_INCIDENT_WEBHOOK_URL=http://127.0.0.1:5678/webhook/aegisops-incident
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-3.8-flash
+GEMINI_MODEL=gemini-3.5-flash-lite
 ```
 
 The shared PostgreSQL default remains `5432`. Developers can override it in their local `.env` when the port is already in use. Keep the real `GEMINI_API_KEY` only in the untracked `.env` file; never commit credentials or raw production logs.
@@ -663,6 +686,7 @@ Detailed implementation notes:
 - [Phase 5 — LLM Investigation v1](docs/phases/phase-05-llm-investigation.md)
 - [Phase 6 — Embeddings & Knowledge Base](docs/phases/phase-06-embeddings-knowledge-base.md)
 - [Phase 7 — RAG Pipeline](docs/phases/phase-07-rag-pipeline.md)
+- [Phase 8 — Reranking & Context Engineering](docs/phases/phase-08-context-engineering.md)
 
 ---
 
@@ -701,7 +725,9 @@ pass normalized context to Investigation Intake
         ↓
 collect incident and current Prometheus evidence
         ↓
-retrieve top-3 embedded runbook sections using pgvector
+retrieve candidate runbook chunks with pgvector
+        ↓
+rerank and select a compact, source-aware context
         ↓
 run Gemini with evidence, excerpts and source IDs
         ↓
@@ -712,6 +738,6 @@ persist evidence, retrieved chunks and report in PostgreSQL
 return investigation ID and report to n8n
 ```
 
-Phase 7 adds a retrieval branch to this investigation path: Markdown runbooks are split into 12 embedded chunks, incident queries are matched against those chunks with pgvector and the top three excerpts are supplied to Gemini with source IDs. Every source ID returned in `runbook_source_ids` is checked against the actual retrieved set before the report is saved.
+Phases 7–8 extend this investigation path: Markdown runbooks are split into 12 embedded chunks, pgvector retrieves candidate sections, and a local cross-encoder reranks them before the best excerpts are supplied to Gemini with source IDs. Every source ID returned in `runbook_source_ids` is checked against the actual retrieved set before the report is saved.
 
-The next milestone is **Phase 8 — Reranking & Context Engineering**. The streamlined roadmap has **21 total phases**, with Phases 0–7 complete. Export the main and intake n8n workflows to `n8n-workflows/` from the local instance; screenshots are verification evidence, not executable workflow definitions.
+The next milestone is **Phase 9 — Tool Calling Layer**. The streamlined roadmap has **21 total phases**, with Phases 0–8 complete. Export the main and intake n8n workflows to `n8n-workflows/` from the local instance; screenshots are verification evidence, not executable workflow definitions.

@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.investigations.evidence import collect_incident_evidence
 from app.investigations.gemini_client import investigate_with_gemini
 from app.knowledge.repository import search_knowledge_chunks
+from app.knowledge.reranking import build_rag_context
 from fastapi import Query
 
 from app.investigations.repository import (
@@ -57,11 +58,20 @@ def run_investigation(incident_id: int):
         "diagnostic checks and recovery verification."
     )
 
+
     try:
-        retrieved_chunks = search_knowledge_chunks(
+        candidates = search_knowledge_chunks(
             query=search_query,
-            limit=3,
+            limit=10,
         )
+
+        rag_context = build_rag_context(
+            query=search_query,
+            candidates=candidates,
+            max_chunks=3,
+            max_excerpt_chars=2400,
+        )
+
     except psycopg.Error as exc:
         logger.exception(
             "Knowledge retrieval failed for incident %s",
@@ -72,22 +82,7 @@ def run_investigation(incident_id: int):
             detail="Knowledge database unavailable",
         ) from exc
 
-    evidence["retrieved_knowledge"] = {
-        "query": search_query,
-        "chunks": [
-            {
-                "source_id": (
-                    f"{chunk['source_key']}"
-                    f"#chunk-{chunk['chunk_id']}"
-                ),
-                "title": chunk["title"],
-                "heading": chunk["heading"],
-                "content": chunk["content"],
-                "similarity": chunk["similarity"],
-            }
-            for chunk in retrieved_chunks
-        ],
-    }
+    evidence["retrieved_knowledge"] = rag_context
 
     # Step 2: Generate the Gemini investigation.
     try:

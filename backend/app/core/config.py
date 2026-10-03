@@ -35,7 +35,7 @@ class Settings:
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     gemini_model: str = os.getenv(
     "GEMINI_MODEL",
-    "gemini-3.8-flash",
+    "gemini-3.5-flash-lite",
     )
 
 
