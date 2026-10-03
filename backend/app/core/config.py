@@ -32,5 +32,11 @@ class Settings:
     "http://127.0.0.1:5678/webhook/aegisops-incident",
     )
 
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    gemini_model: str = os.getenv(
+    "GEMINI_MODEL",
+    "gemini-3.8-flash",
+    )
+
 
 settings = Settings()

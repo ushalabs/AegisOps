@@ -4,8 +4,8 @@ AegisOps is a modular AI-powered incident operations platform being built to det
 
 The project is being developed incrementally so each architectural layer is understood before higher-level orchestration and AI reasoning are added.
 
-> **Current status:** Phase 4 complete — Advanced Workflow Orchestration
-> **Next phase:** Phase 5 — LLM Investigation v1
+> **Current status:** Phase 5 complete — LLM Investigation v1
+> **Next phase:** Phase 6 — Embeddings & Knowledge Base
 
 ---
 
@@ -34,6 +34,12 @@ flowchart TD
     P -->|OPEN| Q[Investigation Intake sub-workflow]
     P -->|RESOLVED| R[Skip recovered incident]
     P -->|GET incident| M
+    Q -->|POST investigation request| M
+    M --> S[Current incident and Prometheus evidence]
+    S --> T[Gemini structured report]
+    T --> U[Pydantic validation]
+    U --> L
+    M -->|Saved report and investigation ID| Q
 
     subgraph Benchmark["Controlled Benchmark Environment"]
         A
@@ -53,6 +59,12 @@ flowchart TD
         P
         Q
         R
+    end
+
+    subgraph Investigation["Phase 5 / evidence-grounded LLM investigation"]
+        S
+        T
+        U
     end
 
     subgraph Core["AegisOps Core"]
@@ -80,7 +92,8 @@ Benchmark, database, and monitoring services are managed by the root `docker-com
 | Phase 2 — Monitoring & Telemetry | ✅ Complete | Prometheus, cAdvisor, Grafana, HTTP metrics, latency, 5xx rate, dependency health, container telemetry |
 | Phase 3 — Incident Detection Engine | ✅ Complete | Prometheus ingestion, deterministic rules, severity, incident persistence, deduplication, automatic resolution |
 | Phase 4 — Advanced Workflow Orchestration | ✅ Complete | Production webhook, severity routing, live incident recheck, timed handling, retries, recovery skip, and shared investigation intake |
-| Phase 5 — LLM Investigation v1 | ⏳ Next | Structured LLM investigation built on the normalized intake payload |
+| Phase 5 — LLM Investigation v1 | ✅ Complete | Gemini structured hypotheses, Prometheus evidence snapshot, PostgreSQL report history, n8n investigation hand-off |
+| Phase 6 — Embeddings & Knowledge Base | ⏳ Next | Represent operational knowledge with embeddings and persistent vector storage |
 
 Detailed phase documentation is available under:
 
@@ -177,7 +190,31 @@ A fresh Redis outage created a new HIGH incident and automatically started the p
 
 ![n8n active incident follows the TRUE branch into the shared intake workflow](docs/screenshots/phase%204/n8n%2C%20true.png)
 
-The intake currently returns `intake_status: RECEIVED` and `investigation_state: PENDING`. It does not yet perform AI investigation; that is the next phase. See the [Phase 4 implementation and verification notes](docs/phases/phase-04-workflow-orchestration.md).
+The intake initially registered normalized incident context; Phase 5 has since extended it with a backend-managed Gemini investigation call. See the [Phase 4 implementation and verification notes](docs/phases/phase-04-workflow-orchestration.md).
+
+---
+
+## Phase 5 — Evidence-Grounded LLM Investigation
+
+AegisOps now turns a still-open incident into a structured **preliminary investigation**. The FastAPI endpoint retrieves the incident and a current Prometheus metric snapshot, asks Gemini to assess the evidence and stores the validated result. The model is asked for observations, hypotheses, missing evidence and suggested checks, not a definitive root cause.
+
+### Automated Gemini invocation
+
+The Phase 4 **AegisOps Investigation Intake** sub-workflow now runs the backend investigation endpoint. Severity routing, recovery checks and human-readable incident history remain outside the model; the API manages evidence collection, structured output and persistence.
+
+![Successful n8n Investigation Intake execution with the Gemini HTTP request](docs/screenshots/phase%205/gemini.png)
+
+### Structured report and evidence
+
+For the Redis outage, the collected snapshot reported Redis as unavailable (`0.0`) while PostgreSQL remained available (`1.0`). Gemini separated those observations from possible causes and returned `LOW` confidence because Redis logs and container status were not available. This avoids presenting a dependency-health metric as proof of a specific failure mechanism.
+
+The successful n8n execution returned investigation `2` for incident `12`, with the Gemini model, evidence timestamp and structured report. Both the manually generated and n8n-triggered reports are stored in PostgreSQL.
+
+![Gemini investigation response, including hypotheses and supporting evidence](docs/screenshots/phase%205/gemini-investigation-output.png)
+
+Saved investigations can now be retrieved through `GET /investigations/{investigation_id}` and `GET /investigations/by-incident/{incident_id}` without another Gemini call. The evidence collector currently produces **investigation-time snapshots**, not historical reconstruction at incident detection.
+
+Read the [Phase 5 implementation and verification notes](docs/phases/phase-05-llm-investigation.md) for the full API contract, persistence design and test evidence.
 
 ---
 
@@ -206,9 +243,17 @@ AegisOps/
 │   │   ├── orchestration/
 │   │   │   ├── __init__.py
 │   │   │   └── n8n.py
+│   │   ├── investigations/
+│   │   │   ├── __init__.py
+│   │   │   ├── evidence.py
+│   │   │   ├── gemini_client.py
+│   │   │   ├── repository.py
+│   │   │   ├── routes.py
+│   │   │   └── schemas.py
 │   │   └── main.py
 │   ├── sql/
-│   │   └── 001_create_incidents.sql
+│   │   ├── 001_create_incidents.sql
+│   │   └── 002_create_investigations.sql
 │   ├── tests/
 │   ├── requirements.txt
 │   └── requirements-dev.txt
@@ -232,7 +277,8 @@ AegisOps/
 │   │   ├── phase-01-benchmark-environment.md
 │   │   ├── phase-02-monitoring-telemetry.md
 │   │   ├── phase-03-incident-detection-engine.md
-│   │   └── phase-04-workflow-orchestration.md
+│   │   ├── phase-04-workflow-orchestration.md
+│   │   └── phase-05-llm-investigation.md
 │   └── screenshots/
 │       ├── phase 2/
 │       │   ├── grafana.png
@@ -240,9 +286,12 @@ AegisOps/
 │       ├── phase 3/
 │       │   ├── grafana.png
 │       │   └── incidents.png
-│       └── phase 4/
-│           ├── n8n, false.png
-│           └── n8n, true.png
+│       ├── phase 4/
+│       │   ├── n8n, false.png
+│       │   └── n8n, true.png
+│       └── phase 5/
+│           ├── gemini.png
+│           └── gemini-investigation-output.png
 │
 ├── n8n-workflows/            # Add actual n8n exports before committing
 ├── .env.example
@@ -271,10 +320,10 @@ AegisOps/
 - cAdvisor
 - Grafana
 - n8n (existing local npm installation)
+- Gemini (`google-genai`, structured JSON output)
+- Pydantic report validation
 
 ### Planned Later
-
-- Gemini
 - LangGraph
 - SentenceTransformers
 - RAG
@@ -296,6 +345,9 @@ GET  /ready
 GET  /incidents
 POST /incidents/detect
 GET  /incidents/{incident_id}
+POST /investigations/{incident_id}/run
+GET  /investigations/{investigation_id}
+GET  /investigations/by-incident/{incident_id}
 ```
 
 `/health` confirms that the FastAPI process is alive.
@@ -305,6 +357,8 @@ GET  /incidents/{incident_id}
 `GET /incidents` returns stored incident history, while `GET /incidents/{incident_id}` returns the latest state for an individual incident; n8n calls the latter before deciding whether to investigate.
 
 `POST /incidents/detect` manually runs one detection cycle for testing and debugging. Normal detection is performed automatically by the background worker.
+
+`POST /investigations/{incident_id}/run` investigates an OPEN incident with a current evidence snapshot and saves the result. The two GET investigation endpoints expose full saved reports and concise per-incident history without making additional model calls.
 
 ---
 
@@ -410,9 +464,11 @@ POSTGRES_PORT=5432
 PROMETHEUS_URL=http://127.0.0.1:9090
 INCIDENT_DETECTION_INTERVAL_SECONDS=10
 N8N_INCIDENT_WEBHOOK_URL=http://127.0.0.1:5678/webhook/aegisops-incident
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.8-flash
 ```
 
-The shared PostgreSQL default remains `5432`. Developers can override it in their local `.env` when the port is already in use.
+The shared PostgreSQL default remains `5432`. Developers can override it in their local `.env` when the port is already in use. Keep the real `GEMINI_API_KEY` only in the untracked `.env` file; never commit credentials or raw production logs.
 
 ---
 
@@ -490,6 +546,7 @@ Detailed implementation notes:
 - [Phase 2 — Monitoring & Telemetry](docs/phases/phase-02-monitoring-telemetry.md)
 - [Phase 3 — Incident Detection Engine](docs/phases/phase-03-incident-detection-engine.md)
 - [Phase 4 — Advanced Workflow Orchestration](docs/phases/phase-04-workflow-orchestration.md)
+- [Phase 5 — LLM Investigation v1](docs/phases/phase-05-llm-investigation.md)
 
 ---
 
@@ -525,6 +582,14 @@ route severity and recheck current state
 investigate active incidents / skip recovered incidents
         ↓
 pass normalized context to Investigation Intake
+        ↓
+collect incident and current Prometheus evidence
+        ↓
+run Gemini structured preliminary investigation
+        ↓
+validate and persist evidence + report in PostgreSQL
+        ↓
+return investigation ID and report to n8n
 ```
 
-The next milestone is **Phase 5 — LLM Investigation v1**, which will add structured model-driven investigation after the reusable n8n intake. Export both n8n workflows to `n8n-workflows/` from the local instance before the Phase 4 commit; this README does not treat screenshots as executable workflow definitions.
+The next milestone is **Phase 6 — Embeddings & Knowledge Base**. It will establish vector-backed operational knowledge separately from the later RAG and agentic investigation phases. Export the updated main and intake n8n workflows to `n8n-workflows/` from the local instance; screenshots are verification evidence, not executable workflow definitions.
