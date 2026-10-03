@@ -35,6 +35,11 @@ Rules:
 - Treat an unavailable dependency as an observation,
   not proof of why that dependency failed.
 - Keep unrelated unhealthy services separate unless evidence links them.
+- When using retrieved runbook information, include its exact
+  source_id in runbook_source_ids.
+- Only reference source IDs actually provided in retrieved_knowledge.
+- Do not cite a runbook as proof that a particular failure occurred.
+- Leave runbook_source_ids empty if no retrieved knowledge was used.
 
 INCIDENT CONTEXT:
 {json.dumps(incident_context, indent=2, default=str)}
@@ -55,6 +60,24 @@ INCIDENT CONTEXT:
     if not response.output_text:
         raise ValueError("Gemini returned an empty investigation")
 
-    return InvestigationReport.model_validate_json(
+    report = InvestigationReport.model_validate_json(
         response.output_text
     )
+
+    available_sources = {
+        chunk["source_id"]
+        for chunk in incident_context.get(
+            "retrieved_knowledge", {}
+        ).get("chunks", [])
+    }
+
+    unknown_sources = (
+        set(report.runbook_source_ids) - available_sources
+    )
+
+    if unknown_sources:
+        raise ValueError(
+            f"Gemini referenced unknown sources: {unknown_sources}"
+        )
+
+    return report

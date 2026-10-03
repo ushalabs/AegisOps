@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from app.core.config import settings
 from app.investigations.evidence import collect_incident_evidence
 from app.investigations.gemini_client import investigate_with_gemini
-from app.investigations.repository import save_investigation
+from app.knowledge.repository import search_knowledge_chunks
 from fastapi import Query
 
 from app.investigations.repository import (
@@ -40,15 +40,59 @@ def run_investigation(incident_id: int):
             detail="Incident database unavailable",
         ) from exc
 
+
     if evidence["incident"]["status"] != "OPEN":
         raise HTTPException(
             status_code=409,
             detail="Only OPEN incidents can be investigated",
         )
 
-    # Step 1: Generate the Gemini investigation.
+    # Step 1: Retrieve relevant runbook sections.
+    incident = evidence["incident"]
+
+    search_query = (
+        f"{incident['title']}. "
+        f"Affected service: {incident['service']}. "
+        "Find troubleshooting procedures, possible causes, "
+        "diagnostic checks and recovery verification."
+    )
+
+    try:
+        retrieved_chunks = search_knowledge_chunks(
+            query=search_query,
+            limit=3,
+        )
+    except psycopg.Error as exc:
+        logger.exception(
+            "Knowledge retrieval failed for incident %s",
+            incident_id,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Knowledge database unavailable",
+        ) from exc
+
+    evidence["retrieved_knowledge"] = {
+        "query": search_query,
+        "chunks": [
+            {
+                "source_id": (
+                    f"{chunk['source_key']}"
+                    f"#chunk-{chunk['chunk_id']}"
+                ),
+                "title": chunk["title"],
+                "heading": chunk["heading"],
+                "content": chunk["content"],
+                "similarity": chunk["similarity"],
+            }
+            for chunk in retrieved_chunks
+        ],
+    }
+
+    # Step 2: Generate the Gemini investigation.
     try:
         report = investigate_with_gemini(evidence)
+
     except Exception as exc:
         logger.exception(
             "Gemini investigation failed for incident %s",

@@ -4,9 +4,9 @@ AegisOps is a modular AI-powered incident operations platform being built to det
 
 The project is being developed incrementally so each architectural layer is understood before higher-level orchestration and AI reasoning are added.
 
-> **Current status:** Phase 6 complete — Embeddings & Knowledge Base
-> **Next phase:** Phase 7 — RAG Pipeline
-> **Roadmap:** 7 of 21 phases complete (Phases 0–6)
+> **Current status:** Phase 7 complete — RAG Pipeline
+> **Next phase:** Phase 8 — Reranking & Context Engineering
+> **Roadmap:** 8 of 21 phases complete (Phases 0–7)
 
 ---
 
@@ -37,20 +37,32 @@ flowchart TD
     P -->|GET incident| M
     Q -->|POST investigation request| M
     M --> S[Current incident and Prometheus evidence]
-    S --> T[Gemini structured report]
-    T --> U[Pydantic validation]
+    S --> RQ[Build incident retrieval query]
+    RQ --> RE[Embed query with local MiniLM]
+    RE --> RS[Top-3 cosine search across runbook chunks]
+    RS --> RC[Evidence plus retrieved excerpts and source IDs]
+    S --> RC
+    RC --> T[Gemini structured report and cited runbook IDs]
+    T --> U[Pydantic validation and source-ID membership check]
     U --> L
     M -->|Saved report and investigation ID| Q
 
-    V[Sample documents and Markdown runbooks] --> W[Local MiniLM embeddings: 384 dimensions]
+    V[Samples and Markdown runbooks] --> W[Local MiniLM whole-document embeddings]
     W --> X[(knowledge_documents / pgvector)]
-    V -->|Source text and metadata| X
-    X -.Stored in.-> L
+    V -->|Heading-aware splitting| Z[Runbook chunks: 100 words max / 20 overlap]
+    Z --> Y[384-dimensional chunk embeddings]
+    Y --> KC[(knowledge_chunks / pgvector)]
+    X -.Documents stored in.-> L
+    KC -.Chunks stored in.-> L
+    KC --> RS
 
-    subgraph Knowledge["Phase 6 / local knowledge base"]
+    subgraph Knowledge["Phases 6–7 / knowledge ingestion and retrieval"]
         V
         W
         X
+        Z
+        Y
+        KC
     end
 
     subgraph Benchmark["Controlled Benchmark Environment"]
@@ -73,7 +85,7 @@ flowchart TD
         R
     end
 
-    subgraph Investigation["Phase 5 / evidence-grounded LLM investigation"]
+    subgraph Investigation["Phases 5–7 / evidence-grounded RAG investigation"]
         S
         T
         U
@@ -91,7 +103,7 @@ flowchart TD
 
 The benchmark environment is deliberately separate from the AegisOps core. It produces controlled failures and telemetry; AegisOps consumes that telemetry and stores its own incident state independently.
 
-Benchmark, database, and monitoring services are managed by the root `docker-compose.yml`. During local development, the AegisOps FastAPI backend and the existing npm-based n8n instance run on Windows. Phase 6 also uses a local CPU-based SentenceTransformers model and a pgvector knowledge table in the AegisOps database. The knowledge base is not yet connected to Gemini; retrieval begins in Phase 7.
+Benchmark, database, and monitoring services are managed by the root `docker-compose.yml`. During local development, AegisOps FastAPI and the existing npm-based n8n instance run on Windows. SentenceTransformers runs locally on the CPU; PostgreSQL with pgvector holds whole documents and runbook chunks. Phase 7 retrieves relevant chunks and supplies them to Gemini alongside incident-specific Prometheus evidence.
 
 ---
 
@@ -106,7 +118,8 @@ Benchmark, database, and monitoring services are managed by the root `docker-com
 | Phase 4 — Advanced Workflow Orchestration | ✅ Complete | Production webhook, severity routing, live incident recheck, timed handling, retries, recovery skip, and shared investigation intake |
 | Phase 5 — LLM Investigation v1 | ✅ Complete | Gemini structured hypotheses, Prometheus evidence snapshot, PostgreSQL report history, n8n investigation hand-off |
 | Phase 6 — Embeddings & Knowledge Base | ✅ Complete | CPU-based 384-dimensional embeddings, pgvector schema, duplicate-safe sample/Markdown ingestion and six stored documents |
-| Phase 7 — RAG Pipeline | ⏳ Next | Document chunking, semantic retrieval and grounded context for Gemini |
+| Phase 7 — RAG Pipeline | ✅ Complete | Heading-aware runbook chunks, 384-dimensional chunk embeddings, top-3 pgvector retrieval, Gemini context and validated source references |
+| Phase 8 — Reranking & Context Engineering | ⏳ Next | Improve retrieved-context selection, ranking and attribution |
 
 Detailed phase documentation is available under:
 
@@ -249,7 +262,29 @@ The screenshot below shows the **six verified records**: three sample documents 
 
 ![Six sample and runbook documents stored with 384-dimensional embeddings in pgvector](docs/screenshots/phase%206/knowledge-base.png)
 
-The runbooks remain initial procedures for the controlled benchmark. Longer-document chunking, semantic retrieval and adding retrieved context to Gemini are intentionally reserved for Phase 7. See the [Phase 6 implementation and verification notes](docs/phases/phase-06-embeddings-knowledge-base.md).
+The runbooks remain initial procedures for the controlled benchmark. Phase 7 extends this foundation with chunk embeddings and retrieval. See the [Phase 6 implementation and verification notes](docs/phases/phase-06-embeddings-knowledge-base.md).
+
+---
+
+## Phase 7 — RAG Pipeline
+
+Phase 7 connects the previously standalone knowledge base to the Phase 5 investigator. Each runbook is split at Markdown headings, with long sections capped at approximately 100 words and 20 words of overlap. The 12 resulting chunks are embedded locally using the same 384-dimensional MiniLM model and stored in `knowledge_chunks`, linked to their source documents.
+
+### Semantic retrieval — relevant runbook sections
+
+For a Redis-unavailability incident, AegisOps embeds a query derived from the incident title and affected service. PostgreSQL's pgvector cosine-distance operator ranks runbook chunks and returns the three closest matches with their titles, headings, content and source IDs. The saved retrieval below returned Redis Symptoms (`0.8407`), Potential Causes (`0.7321`) and Investigation (`0.6563`). These are similarity scores, not probabilities of a correct diagnosis.
+
+![Top three retrieved Redis runbook chunks with source IDs and cosine similarity](docs/screenshots/phase%207/retrieval.png)
+
+### Gemini context and source validation
+
+The existing investigation endpoint adds the retrieved excerpts to its Prometheus evidence before requesting a structured Gemini report. Its saved evidence records the retrieval query and exact chunks supplied to the model. Gemini can return `runbook_source_ids`; AegisOps checks that every returned ID belongs to the retrieved set before accepting the report.
+
+![Runbook citations from Gemini verified against the retrieved source IDs](docs/screenshots/phase%207/rag-validation.png)
+
+The verification accepted both `runbook:redis-availability#chunk-10` and `runbook:redis-availability#chunk-11`. This confirms that the references correspond to retrieved material; it does **not** independently prove that every claim in the generated report is supported by the cited runbook. Per-claim attribution and more advanced ranking are future improvements.
+
+Read the [Phase 7 implementation and verification notes](docs/phases/phase-07-rag-pipeline.md) for schema, ingestion, retrieval SQL, Gemini integration, limitations and test results.
 
 ---
 
@@ -286,13 +321,15 @@ AegisOps/
 │   │   │   ├── routes.py
 │   │   │   └── schemas.py
 │   │   ├── knowledge/
+│   │   │   ├── chunking.py
 │   │   │   ├── embeddings.py
 │   │   │   └── repository.py
 │   │   └── main.py
 │   ├── sql/
 │   │   ├── 001_create_incidents.sql
 │   │   ├── 002_create_investigations.sql
-│   │   └── 003_create_knowledge_documents.sql
+│   │   ├── 003_create_knowledge_documents.sql
+│   │   └── 004_create_knowledge_chunks.sql
 │   ├── scripts/
 │   │   ├── embedding_demo.py
 │   │   ├── seed_knowledge.py
@@ -322,7 +359,8 @@ AegisOps/
 │   │   ├── phase-03-incident-detection-engine.md
 │   │   ├── phase-04-workflow-orchestration.md
 │   │   ├── phase-05-llm-investigation.md
-│   │   └── phase-06-embeddings-knowledge-base.md
+│   │   ├── phase-06-embeddings-knowledge-base.md
+│   │   └── phase-07-rag-pipeline.md
 │   ├── runbooks/
 │   │   ├── redis-availability.md
 │   │   ├── postgresql-availability.md
@@ -340,8 +378,11 @@ AegisOps/
 │       ├── phase 5/
 │       │   ├── gemini.png
 │       │   └── gemini-investigation-output.png
-│       └── phase 6/
-│           └── knowledge-base.png
+│       ├── phase 6/
+│       │   └── knowledge-base.png
+│       └── phase 7/
+│           ├── retrieval.png
+│           └── rag-validation.png
 │
 ├── n8n-workflows/            # Add actual n8n exports before committing
 ├── .env.example
@@ -378,7 +419,7 @@ AegisOps/
 
 ### Planned Later
 - LangGraph
-- RAG
+- Reranking (Phase 8)
 - Slack / Discord notifications where useful
 - AWS
 - Terraform
@@ -410,7 +451,7 @@ GET  /investigations/by-incident/{incident_id}
 
 `POST /incidents/detect` manually runs one detection cycle for testing and debugging. Normal detection is performed automatically by the background worker.
 
-`POST /investigations/{incident_id}/run` investigates an OPEN incident with a current evidence snapshot and saves the result. The two GET investigation endpoints expose full saved reports and concise per-incident history without making additional model calls. Phase 6 adds a script-driven knowledge base; it does not introduce knowledge-base HTTP endpoints or alter the current investigator.
+`POST /investigations/{incident_id}/run` investigates an OPEN incident using a current Prometheus snapshot and top-3 retrieved runbook excerpts, validates any Gemini-provided runbook source IDs, and saves the report together with the exact retrieval context. The two GET investigation endpoints expose full saved reports and concise per-incident history without additional model calls. Knowledge ingestion and retrieval are internal backend functions, not separate public endpoints.
 
 ---
 
@@ -507,9 +548,9 @@ AegisOps now queries Prometheus directly through its HTTP API for incident detec
 
 ---
 
-## Knowledge Base
+## Knowledge Base & RAG
 
-Runbook ingestion and embeddings run locally against AegisOps PostgreSQL; they do not depend on Gemini credentials or n8n. The current table is `knowledge_documents` with `VECTOR(384)` embeddings. Re-ingestion uses stable `source_key` values to update existing records.
+Runbook ingestion and embeddings run locally against AegisOps PostgreSQL; ingestion does not require Gemini credentials or n8n. `knowledge_documents` holds full documents and `knowledge_chunks` holds embedded sections linked by `document_id`. Both use `VECTOR(384)` with the same SentenceTransformers model. Re-ingestion updates documents using stable `source_key` values and replaces obsolete chunks.
 
 From `backend/`:
 
@@ -524,7 +565,7 @@ Verify stored dimensions using the existing Docker database:
 docker exec aegisops-postgres psql -U aegisops -d aegisops -c "SELECT source_key, source_type, vector_dims(embedding) AS dimensions FROM knowledge_documents ORDER BY id;"
 ```
 
-At the end of Phase 6 the knowledge base contains **six documents**: three samples and three Markdown runbooks. Whole-file embeddings are sufficient for this small demonstration, but chunking and retrieval are deferred until Phase 7.
+The knowledge base contains **six documents** (three samples and three Markdown runbooks), with **12 embedded runbook chunks** across Symptoms, Investigation, Potential Causes and Recovery. The investigator now builds a query from the incident title and service, searches the chunks with pgvector cosine similarity and passes the top three excerpts to Gemini. The response's optional `runbook_source_ids` are validated against the retrieved IDs.
 
 ---
 
@@ -621,6 +662,7 @@ Detailed implementation notes:
 - [Phase 4 — Advanced Workflow Orchestration](docs/phases/phase-04-workflow-orchestration.md)
 - [Phase 5 — LLM Investigation v1](docs/phases/phase-05-llm-investigation.md)
 - [Phase 6 — Embeddings & Knowledge Base](docs/phases/phase-06-embeddings-knowledge-base.md)
+- [Phase 7 — RAG Pipeline](docs/phases/phase-07-rag-pipeline.md)
 
 ---
 
@@ -659,13 +701,17 @@ pass normalized context to Investigation Intake
         ↓
 collect incident and current Prometheus evidence
         ↓
-run Gemini structured preliminary investigation
+retrieve top-3 embedded runbook sections using pgvector
         ↓
-validate and persist evidence + report in PostgreSQL
+run Gemini with evidence, excerpts and source IDs
+        ↓
+validate structured report and runbook source IDs
+        ↓
+persist evidence, retrieved chunks and report in PostgreSQL
         ↓
 return investigation ID and report to n8n
 ```
 
-In parallel, Phase 6 now provides a local knowledge-ingestion path: Markdown runbooks and sample troubleshooting text are embedded with SentenceTransformers and stored in `knowledge_documents` with source metadata. The knowledge table is **not yet queried by Gemini**.
+Phase 7 adds a retrieval branch to this investigation path: Markdown runbooks are split into 12 embedded chunks, incident queries are matched against those chunks with pgvector and the top three excerpts are supplied to Gemini with source IDs. Every source ID returned in `runbook_source_ids` is checked against the actual retrieved set before the report is saved.
 
-The next milestone is **Phase 7 — RAG Pipeline**: document chunking, semantic search in pgvector and source-grounded context construction. The streamlined project roadmap has **21 total phases**, with Phases 0–6 complete. Export the current main and intake n8n workflows to `n8n-workflows/` from the local instance; screenshots are verification evidence, not executable workflow definitions.
+The next milestone is **Phase 8 — Reranking & Context Engineering**. The streamlined roadmap has **21 total phases**, with Phases 0–7 complete. Export the main and intake n8n workflows to `n8n-workflows/` from the local instance; screenshots are verification evidence, not executable workflow definitions.

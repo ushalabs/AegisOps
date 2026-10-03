@@ -23,3 +23,12 @@ class InvestigationReport(BaseModel):
             "to support a meaningful preliminary diagnosis."
         )
     )
+
+    runbook_source_ids: list[str] = Field(
+    default_factory=list,
+    description=(
+        "Exact source_id values of retrieved runbook chunks "
+        "used to inform the investigation or recommended checks. "
+        "Leave empty if no runbook information was used."
+    ),
+)
