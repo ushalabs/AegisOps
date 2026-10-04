@@ -4,9 +4,9 @@ AegisOps is a modular AI-powered incident operations platform being built to det
 
 The project is being developed incrementally so each architectural layer is understood before higher-level orchestration and AI reasoning are added.
 
-> **Current status:** Phase 9 complete — Tool Calling Layer
-> **Next phase:** Phase 10 — LangGraph Investigation Agent
-> **Roadmap:** 10 of 21 phases complete (Phases 0–9)
+> **Current status:** Phase 10 complete — LangGraph Investigation Agent
+> **Next phase:** Phase 11 — Human-in-the-Loop Remediation
+> **Roadmap:** 11 of 21 phases complete (Phases 0–10)
 
 ---
 
@@ -14,111 +14,47 @@ The project is being developed incrementally so each architectural layer is unde
 
 ```mermaid
 flowchart TD
-    A[Benchmark API<br/>FastAPI] --> B[Benchmark PostgreSQL]
-    A --> C[Redis]
-    A --> D[Prometheus Metrics]
-
-    E[cAdvisor] --> F[Prometheus]
-    D --> F
-    F --> G[Grafana]
-
-    F --> H[AegisOps Prometheus Client]
-    H --> I[Detection Rules]
-    I --> J[Incident Detector]
-    J --> K[Incident Manager]
-    K --> L[AegisOps PostgreSQL<br/>pgvector]
-
-    M[AegisOps FastAPI] --> K
-    M --> L
-    K -->|CREATE event via HTTP POST| O[n8n production webhook]
-    O --> P[Severity routing and live status recheck]
-    P -->|OPEN| Q[Investigation Intake sub-workflow]
-    P -->|RESOLVED| R[Skip recovered incident]
-    P -->|GET incident| M
-    Q -->|POST investigation request| M
-    M --> S[Current incident and Prometheus evidence]
-    S --> RQ[Build incident retrieval query]
-    RQ --> RE[Embed query with local MiniLM]
-    RE --> RS[Vector search for 10 runbook candidates]
-    RS --> RR[Cross-encoder reranks retrieved candidates]
-    RR --> RB[Select up to 3 chunks within context budget]
-    RB --> RC[Evidence plus selected excerpts and source IDs]
-    S --> RC
-    RC --> T[Gemini structured report and cited runbook IDs]
-    T --> U[Pydantic validation and source-ID membership check]
-    U --> L
-    M -->|Saved report and investigation ID| Q
-
-    subgraph Tools["Phase 9 / standalone, read-only tool-calling prototype"]
-        TP[Gemini tool decisions] --> TV[Allowlisted tool dispatcher]
-        TV --> TI[Incident record lookup]
-        TV --> TM[Predefined Prometheus metric]
-        TV --> TL[Benchmark Docker logs and state]
-        TI --> TP
-        TM --> TP
-        TL --> TP
-    end
-    TI -.reads.-> L
-    TM -.queries.-> F
-    TL -.reads controlled containers.-> B
-
-    V[Samples and Markdown runbooks] --> W[Local MiniLM whole-document embeddings]
-    W --> X[(knowledge_documents / pgvector)]
-    V -->|Heading-aware splitting| Z[Runbook chunks: 100 words max / 20 overlap]
-    Z --> Y[384-dimensional chunk embeddings]
-    Y --> KC[(knowledge_chunks / pgvector)]
-    X -.Documents stored in.-> L
-    KC -.Chunks stored in.-> L
-    KC --> RS
-
-    subgraph Knowledge["Phases 6–8 / knowledge ingestion and retrieval"]
-        V
-        W
-        X
-        Z
-        Y
-        KC
-    end
-
-    subgraph Benchmark["Controlled Benchmark Environment"]
-        A
-        B
-        C
-    end
-
-    subgraph Observability["Monitoring & Telemetry"]
-        D
-        E
-        F
-        G
-    end
-
-    subgraph Orchestration["n8n / local npm"]
-        O
-        P
-        Q
-        R
-    end
-
-    subgraph Investigation["Phases 5–8 / production RAG investigation"]
-        S
-        T
-        U
-    end
-
-    subgraph Core["AegisOps Core"]
-        H
-        I
-        J
-        K
-        L
-        M
-    end
+    BA[Benchmark API] --> BP[Benchmark PostgreSQL]
+    BA --> BR[Benchmark Redis]
+    BA --> PM[Prometheus metrics]
+    CAD[cAdvisor] --> PROM[Prometheus]
+    PM --> PROM
+    PROM --> GRAF[Grafana]
+    PROM --> DET[AegisOps rules and incident detector]
+    DET --> IDB[(AegisOps PostgreSQL and pgvector)]
+    DET -->|New OPEN incident| WH[n8n incident webhook]
+    WH --> SEV[Severity router]
+    SEV --> STATUS[Recheck live incident status]
+    STATUS -->|Recovered| SKIP[Skip recovered incident]
+    STATUS -->|Still OPEN| INTAKE[n8n Investigation Intake]
+    INTAKE -->|POST run-agent with stable run ID| API[FastAPI agent endpoint]
+    API --> GRAPH[LangGraph StateGraph]
+    GRAPH --> EVID[Collect incident and current metrics]
+    EVID --> RAG[Retrieve 10 chunks and rerank to up to 3]
+    RAG --> DECIDE[Gemini decision node]
+    DECIDE -->|Needs more evidence| TOOLS[Allowlisted tool dispatcher]
+    TOOLS --> T1[Incident records]
+    TOOLS --> T2[Predefined Prometheus metrics]
+    TOOLS --> T3[Benchmark Docker logs and state]
+    T1 --> DECIDE
+    T2 --> DECIDE
+    T3 --> DECIDE
+    DECIDE -->|Finished or budget reached| FINAL[Structured report finalization]
+    FINAL --> VALID[Validate report and runbook source IDs]
+    VALID --> IDB
+    IDB -->|Investigation ID and status| API
+    API --> INTAKE
+    GRAPH <-->|Node-level checkpoints keyed by run ID| IDB
+    RUNBOOK[Markdown runbooks] --> CHUNK[Heading-aware chunks and local embeddings]
+    CHUNK --> IDB
+    IDB --> RAG
+    API -->|Legacy POST run remains available| LEGACY[Single-pass Gemini endpoint]
+    LEGACY --> IDB
 ```
 
 The benchmark environment is deliberately separate from the AegisOps core. It produces controlled failures and telemetry; AegisOps consumes that telemetry and stores its own incident state independently.
 
-Benchmark, database, and monitoring services are managed by the root `docker-compose.yml`. During local development, AegisOps FastAPI and the existing npm-based n8n instance run on Windows. SentenceTransformers runs locally on the CPU; PostgreSQL with pgvector holds whole documents and runbook chunks. Phase 8 reranks retrieved chunks and supplies a compact, source-aware selection to Gemini alongside incident-specific Prometheus evidence. Phase 9 adds a separate controlled tool-calling prototype; integration into the production investigation endpoint and n8n remains for Phase 10.
+Benchmark, database and monitoring services are managed by the root `docker-compose.yml`. During local development, AegisOps FastAPI and the existing npm-based n8n instance run on Windows. The local embedding model and cross-encoder support retrieval; PostgreSQL with pgvector stores runbooks and investigations. Phase 10 now integrates the allowlisted Phase 9 tools into a checkpointed LangGraph agent. The existing single-pass investigation endpoint remains available, while the n8n Investigation Intake sub-workflow calls the new `run-agent` endpoint.
 
 ---
 
@@ -136,7 +72,8 @@ Benchmark, database, and monitoring services are managed by the root `docker-com
 | Phase 7 — RAG Pipeline | ✅ Complete | Heading-aware runbook chunks, 384-dimensional chunk embeddings, top-3 pgvector retrieval, Gemini context and validated source references |
 | Phase 8 — Reranking & Context Engineering | ✅ Complete | Local cross-encoder reranking, duplicate-free context, excerpt budget and saved similarity/rerank scores |
 | Phase 9 — Tool Calling Layer | ✅ Complete | Read-only incident/metric/log tools, validated allowlists, bounded Gemini tool-call loop and controlled multi-tool investigation |
-| Phase 10 — LangGraph Investigation Agent | ⏳ Next | Stateful evidence collection, tool execution and structured reporting |
+| Phase 10 — LangGraph Investigation Agent | ✅ Complete | Stateful evidence and RAG, conditional Gemini/tool loop, PostgreSQL checkpointing, budget-aware structured report persistence and verified n8n integration |
+| Phase 11 — Human-in-the-Loop Remediation | ⏳ Next | Approval-gated remediation proposals; no unattended destructive actions |
 
 Detailed phase documentation is available under:
 
@@ -341,7 +278,29 @@ Gemini used the incident record, current PostgreSQL metric and benchmark databas
 
 ![Gemini final investigation report for historical PostgreSQL incident 13](docs/screenshots/phase%209/investigation-report.png)
 
-See [Phase 9 implementation, security controls and verification](docs/phases/phase-09-tool-calling-layer.md). Phase 10 will integrate this bounded tool-calling behavior into a stateful LangGraph investigator and subsequently into the normal investigation lifecycle.
+See [Phase 9 implementation, security controls and verification](docs/phases/phase-09-tool-calling-layer.md). Phase 10 subsequently integrated the allowlisted dispatcher into a checkpointed LangGraph graph.
+
+---
+
+## Phase 10 — Checkpointed LangGraph Investigation Agent
+
+Phase 10 replaces the manually managed tool loop with an explicit, stateful investigation graph. The graph collects incident evidence, retrieves and reranks runbooks, lets Gemini request additional evidence through allowlisted read-only tools, and then validates and persists a structured report. Tool execution remains bounded at three rounds and six calls.
+
+### LangGraph execution and saved report
+
+The independent graph test investigated resolved PostgreSQL incident **13**, preserving events across nodes and tool rounds. Its finalization node saved structured investigation **7**, including runbook source references. This screenshot demonstrates node sequencing and report persistence rather than merely showing an LLM answer.
+
+![LangGraph execution trail, successful tool calls and structured investigation 7 saved](docs/screenshots/phase%2010/langgraph-execution.png)
+
+### n8n-to-LangGraph integration
+
+The published main workflow routed a fresh **HIGH** Redis incident through its live OPEN-state check to the existing Investigation Intake sub-workflow. That workflow called the checkpointed `run-agent` FastAPI endpoint; the resulting structured investigation **9** was retrieved through the API and linked to incident **15**. Its saved evidence contained all three successful read-only tool calls and the `vector_search_then_reranking` retrieval strategy.
+
+![n8n Investigation Intake calling the LangGraph endpoint for a real incident](docs/screenshots/phase%2010/n8n-integration.png)
+
+The second screenshot is the Investigation Intake execution you saved locally; place it at the indicated path. PostgreSQL checkpointing was separately verified by loading the **same checkpoint ID in two Python processes**. A repeated request using a completed `run_id` returned the **same investigation ID** without starting a new run. When the evidence-gathering budget was exhausted, the agent generated a qualified `COMPLETED_WITH_LIMIT` report instead of looping indefinitely.
+
+See [Phase 10 implementation and verification](docs/phases/phase-10-langgraph-investigation-agent.md).
 
 ---
 
@@ -372,6 +331,7 @@ AegisOps/
 │   │   │   └── n8n.py
 │   │   ├── investigations/
 │   │   │   ├── __init__.py
+│   │   │   ├── agent.py
 │   │   │   ├── evidence.py
 │   │   │   ├── gemini_client.py
 │   │   │   ├── repository.py
@@ -391,7 +351,8 @@ AegisOps/
 │   ├── scripts/
 │   │   ├── embedding_demo.py
 │   │   ├── seed_knowledge.py
-│   │   └── ingest_runbooks.py
+│   │   ├── ingest_runbooks.py
+│   │   └── check_checkpoint.py
 │   ├── tests/
 │   ├── requirements.txt
 │   └── requirements-dev.txt
@@ -418,7 +379,10 @@ AegisOps/
 │   │   ├── phase-04-workflow-orchestration.md
 │   │   ├── phase-05-llm-investigation.md
 │   │   ├── phase-06-embeddings-knowledge-base.md
-│   │   └── phase-07-rag-pipeline.md
+│   │   ├── phase-07-rag-pipeline.md
+│   │   ├── phase-08-context-engineering.md
+│   │   ├── phase-09-tool-calling-layer.md
+│   │   └── phase-10-langgraph-investigation-agent.md
 │   ├── runbooks/
 │   │   ├── redis-availability.md
 │   │   ├── postgresql-availability.md
@@ -438,9 +402,18 @@ AegisOps/
 │       │   └── gemini-investigation-output.png
 │       ├── phase 6/
 │       │   └── knowledge-base.png
-│       └── phase 7/
-│           ├── retrieval.png
-│           └── rag-validation.png
+│       ├── phase 7/
+│       │   ├── retrieval.png
+│       │   └── rag-validation.png
+│       ├── phase 8/
+│       │   ├── reranking.png
+│       │   └── context-engineering.png
+│       ├── phase 9/
+│       │   ├── tool-calls.png
+│       │   └── investigation-report.png
+│       └── phase 10/
+│           ├── langgraph-execution.png
+│           └── n8n-integration.png
 │
 ├── n8n-workflows/            # Add actual n8n exports before committing
 ├── .env.example
@@ -471,13 +444,14 @@ AegisOps/
 - n8n (existing local npm installation)
 - Gemini (`google-genai`, structured JSON output)
 - Pydantic report validation
-- Validated read-only Gemini tool dispatcher (prototype)
+- Validated read-only Gemini tool dispatcher
+- LangGraph StateGraph with conditional edges
+- PostgreSQL checkpointing (`langgraph-checkpoint-postgres`)
 - SentenceTransformers (`all-MiniLM-L6-v2`, CPU)
 - NumPy (cosine-similarity experiment)
 - pgvector Python adapter (`pgvector.psycopg`)
 
 ### Planned Later
-- LangGraph (Phase 10)
 - Slack / Discord notifications where useful
 - AWS
 - Terraform
@@ -497,6 +471,7 @@ GET  /incidents
 POST /incidents/detect
 GET  /incidents/{incident_id}
 POST /investigations/{incident_id}/run
+POST /investigations/{incident_id}/run-agent?run_id={uuid}
 GET  /investigations/{investigation_id}
 GET  /investigations/by-incident/{incident_id}
 ```
@@ -509,7 +484,7 @@ GET  /investigations/by-incident/{incident_id}
 
 `POST /incidents/detect` manually runs one detection cycle for testing and debugging. Normal detection is performed automatically by the background worker.
 
-`POST /investigations/{incident_id}/run` investigates an OPEN incident using a current Prometheus snapshot and top-3 retrieved runbook excerpts, validates any Gemini-provided runbook source IDs, and saves the report together with the exact retrieval context. The two GET investigation endpoints expose full saved reports and concise per-incident history without additional model calls. Knowledge ingestion and retrieval are internal backend functions, not separate public endpoints.
+`POST /investigations/{incident_id}/run` remains the original single-pass Gemini investigation endpoint for OPEN incidents. `POST /investigations/{incident_id}/run-agent?run_id={uuid}` uses the checkpointed LangGraph workflow; a stable run ID enables checkpoint reuse and prevents a completed run from being re-executed on an identical request. The two GET investigation endpoints expose saved full reports and per-incident history without additional model calls. The new agent endpoint has been tested independently against a resolved incident and end to end from n8n against an OPEN Redis incident; it is not yet production hardened for overlapping concurrent retries or exactly-once report writes.
 
 ---
 
@@ -623,7 +598,7 @@ Verify stored dimensions using the existing Docker database:
 docker exec aegisops-postgres psql -U aegisops -d aegisops -c "SELECT source_key, source_type, vector_dims(embedding) AS dimensions FROM knowledge_documents ORDER BY id;"
 ```
 
-The knowledge base contains **six documents** (three samples and three Markdown runbooks), with **12 embedded runbook chunks** across Symptoms, Investigation, Potential Causes and Recovery. The investigator now builds a query from the incident title and service, searches the chunks with pgvector cosine similarity and passes the top three excerpts to Gemini. The response's optional `runbook_source_ids` are validated against the retrieved IDs.
+The knowledge base contains **six documents** (three samples and three Markdown runbooks), with **12 embedded runbook chunks** across Symptoms, Investigation, Potential Causes and Recovery. The investigator now builds a query from the incident title and service, retrieves up to ten candidates with pgvector, reranks them and passes up to three curated excerpts to Gemini. The response's optional `runbook_source_ids` are validated against the retrieved IDs.
 
 ---
 
@@ -723,59 +698,42 @@ Detailed implementation notes:
 - [Phase 7 — RAG Pipeline](docs/phases/phase-07-rag-pipeline.md)
 - [Phase 8 — Reranking & Context Engineering](docs/phases/phase-08-context-engineering.md)
 - [Phase 9 — Tool Calling Layer](docs/phases/phase-09-tool-calling-layer.md)
+- [Phase 10 — LangGraph Investigation Agent](docs/phases/phase-10-langgraph-investigation-agent.md)
 
 ---
 
 ## Current Milestone
 
-AegisOps can now:
+The verified end-to-end workflow is now:
 
 ```text
-run a controlled target system
+Controlled benchmark outage
         ↓
-produce repeatable failures
+Prometheus + deterministic detection rules
         ↓
-collect application and container telemetry
+Durable OPEN incident in AegisOps PostgreSQL
         ↓
-store time-series evidence in Prometheus
+n8n severity routing and live OPEN-state recheck
         ↓
-visualize behavior in Grafana
+Investigation Intake calls checkpointed FastAPI run-agent endpoint
         ↓
-query telemetry from the AegisOps core
+LangGraph collects incident evidence and reranked runbooks
         ↓
-evaluate deterministic incident rules
+Gemini decides whether additional evidence is needed
         ↓
-persist OPEN incidents
+Allowlisted incident / metric / benchmark log tools
         ↓
-deduplicate repeated detections
+Gemini continues or reaches a bounded tool budget
         ↓
-automatically RESOLVE incidents after recovery
+Structured report generation and runbook source validation
         ↓
-POST new incident events to n8n
+Investigation and evidence persisted in PostgreSQL
         ↓
-route severity and recheck current state
-        ↓
-investigate active incidents / skip recovered incidents
-        ↓
-pass normalized context to Investigation Intake
-        ↓
-collect incident and current Prometheus evidence
-        ↓
-retrieve candidate runbook chunks with pgvector
-        ↓
-rerank and select a compact, source-aware context
-        ↓
-run Gemini with evidence, excerpts and source IDs
-        ↓
-validate structured report and runbook source IDs
-        ↓
-persist evidence, retrieved chunks and report in PostgreSQL
-        ↓
-return investigation ID and report to n8n
+n8n receives the investigation ID
 ```
 
-Phase 9 separately demonstrates three controlled read-only tools (`get_incident`, `get_metric`, `get_service_logs`) and a bounded Gemini tool-calling loop. This prototype is **not yet integrated into the normal n8n/FastAPI investigation request**.
+**End-to-end verification:** A fresh HIGH Redis outage created incident **15**; n8n reached Investigation Intake; the LangGraph agent ran its allowed incident, metric and service-log tools; and the resulting saved investigation **9** was retrieved through the API. Its termination was `TOOL_BUDGET_REACHED`, producing a qualified report rather than claiming certainty about an unproven root cause.
 
-Phases 7–8 extend this investigation path: Markdown runbooks are split into 12 embedded chunks, pgvector retrieves candidate sections, and a local cross-encoder reranks them before the best excerpts are supplied to Gemini with source IDs. Every source ID returned in `runbook_source_ids` is checked against the actual retrieved set before the report is saved.
+Checkpoint recovery is verified across distinct Python processes, and repeated requests with a finished run ID return the existing saved report. This is **not yet exactly-once execution** under concurrent retries or crashes between final report persistence and the following checkpoint. The current agent is read-only; no automated remediation has been authorized or implemented.
 
-The next milestone is **Phase 10 — LangGraph Investigation Agent**. The streamlined roadmap has **21 total phases**, with Phases 0–9 complete. Export the main and intake n8n workflows to `n8n-workflows/` from the local instance; screenshots are verification evidence, not executable workflow definitions.
+**Next: Phase 11 — Human-in-the-Loop Remediation.** The streamlined roadmap has **21 total phases**, with Phases 0–10 complete. Export the main and intake n8n workflows to `n8n-workflows/` from the local instance; screenshots are verification evidence, not executable workflow definitions.

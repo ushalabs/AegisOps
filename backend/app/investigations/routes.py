@@ -10,6 +10,13 @@ from app.investigations.gemini_client import investigate_with_gemini
 from app.knowledge.repository import search_knowledge_chunks
 from app.knowledge.reranking import build_rag_context
 from fastapi import Query
+from uuid import UUID
+
+from fastapi import Query
+from langgraph.checkpoint.postgres import PostgresSaver
+from psycopg.conninfo import make_conninfo
+
+from app.investigations.agent import builder
 
 from app.investigations.repository import (
     save_investigation,
@@ -168,3 +175,100 @@ def get_investigation(investigation_id: int):
         )
 
     return investigation
+
+
+@router.post("/{incident_id}/run-agent")
+def run_agent_investigation(
+    incident_id: int,
+    run_id: UUID = Query(...),
+):
+    thread_id = str(run_id)
+
+    conninfo = make_conninfo(
+        host=settings.postgres_host,
+        port=settings.postgres_port,
+        dbname=settings.postgres_db,
+        user=settings.postgres_user,
+        password=settings.postgres_password,
+    )
+
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+        },
+        "recursion_limit": 20,
+    }
+
+    try:
+        with PostgresSaver.from_conn_string(
+            conninfo
+        ) as checkpointer:
+            checkpointer.setup()
+
+            graph = builder.compile(
+                checkpointer=checkpointer,
+            )
+
+            snapshot = graph.get_state(config)
+
+            if snapshot.values:
+                if snapshot.values["incident_id"] != incident_id:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Run ID belongs to another incident",
+                    )
+
+                # A completed run must not call Gemini again.
+                if snapshot.values.get("investigation_id"):
+                    result = snapshot.values
+                else:
+                    # Resume from the latest saved checkpoint.
+                    result = graph.invoke(
+                        None,
+                        config=config,
+                    )
+            else:
+                # New investigation with a new thread ID.
+                result = graph.invoke(
+                    {
+                        "incident_id": incident_id,
+                        "events": [],
+                        "tool_history": [],
+                    },
+                    config=config,
+                )
+
+    except HTTPException:
+        raise
+
+    except psycopg.Error as exc:
+        logger.exception(
+            "Checkpoint database error for run %s",
+            thread_id,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Checkpoint database unavailable",
+        ) from exc
+
+    except Exception as exc:
+        logger.exception(
+            "Agent investigation interrupted: %s",
+            thread_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Investigation interrupted. Retry with "
+                "the same run_id after checking backend logs."
+            ),
+        ) from exc
+
+    return {
+        "run_id": thread_id,
+        "incident_id": incident_id,
+        "status": result.get("status"),
+        "investigation_id": result.get("investigation_id"),
+        "tool_rounds": result.get("tool_rounds", 0),
+        "tool_calls": len(result.get("tool_history", [])),
+    }
