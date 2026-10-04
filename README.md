@@ -296,7 +296,7 @@ The independent graph test investigated resolved PostgreSQL incident **13**, pre
 
 The published main workflow routed a fresh **HIGH** Redis incident through its live OPEN-state check to the existing Investigation Intake sub-workflow. That workflow called the checkpointed `run-agent` FastAPI endpoint; the resulting structured investigation **9** was retrieved through the API and linked to incident **15**. Its saved evidence contained all three successful read-only tool calls and the `vector_search_then_reranking` retrieval strategy.
 
-![n8n Investigation Intake calling the LangGraph endpoint for a real incident](docs/screenshots/phase%2010/n8n-Langgraph.png)
+![n8n Investigation Intake calling the LangGraph endpoint for a real incident](docs/screenshots/phase%2010/n8n_Langgraph.png)
 
 The second screenshot is the Investigation Intake execution you saved locally; place it at the indicated path. PostgreSQL checkpointing was separately verified by loading the **same checkpoint ID in two Python processes**. A repeated request using a completed `run_id` returned the **same investigation ID** without starting a new run. When the evidence-gathering budget was exhausted, the agent generated a qualified `COMPLETED_WITH_LIMIT` report instead of looping indefinitely.
 
