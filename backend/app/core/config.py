@@ -38,5 +38,7 @@ class Settings:
     "gemini-3.5-flash-lite",
     )
 
+    remediation_review_key: str = os.getenv("REMEDIATION_REVIEW_KEY", "")
+
 
 settings = Settings()

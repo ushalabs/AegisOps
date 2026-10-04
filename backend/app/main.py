@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from app.incidents.routes import router as incidents_router
 from app.incidents.worker import incident_detection_worker
 from app.investigations.routes import router as investigation_router
+from app.remediation_routes import router as remediation_router
 
 
 @asynccontextmanager
@@ -39,6 +40,7 @@ app = FastAPI(
 
 app.include_router(incidents_router)
 app.include_router(investigation_router)
+app.include_router(remediation_router)
 
 
 @app.get("/health")

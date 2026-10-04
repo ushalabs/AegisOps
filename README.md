@@ -4,9 +4,9 @@ AegisOps is a modular AI-powered incident operations platform being built to det
 
 The project is being developed incrementally so each architectural layer is understood before higher-level orchestration and AI reasoning are added.
 
-> **Current status:** Phase 10 complete — LangGraph Investigation Agent
-> **Next phase:** Phase 11 — Human-in-the-Loop Remediation
-> **Roadmap:** 11 of 21 phases complete (Phases 0–10)
+> **Current status:** Phase 11 complete — Human-in-the-Loop Remediation
+> **Next phase:** Phase 12 — Automated Remediation
+> **Roadmap:** 12 of 21 phases complete (Phases 0–11)
 
 ---
 
@@ -44,6 +44,14 @@ flowchart TD
     VALID --> IDB
     IDB -->|Investigation ID and status| API
     API --> INTAKE
+    INTAKE -->|Investigation saved| PROPOSE[Create allowlisted remediation proposal]
+    PROPOSE -->|OPEN incident and matching investigation| PDB[(Remediation proposal records)]
+    PROPOSE -->|Recovered or unsupported| SKIPPROP[Skip proposal or approval]
+    PDB --> DETAIL[Retrieve stored proposal]
+    DETAIL --> WAIT[n8n authenticated human review form]
+    WAIT -->|Approve or reject with note| REVIEW[FastAPI authenticated review endpoint]
+    REVIEW -->|Revalidate incident, expiration and PENDING status| PDB
+    REVIEW -->|Store decision only| NOEXEC[No recovery command in Phase 11]
     GRAPH <-->|Node-level checkpoints keyed by run ID| IDB
     RUNBOOK[Markdown runbooks] --> CHUNK[Heading-aware chunks and local embeddings]
     CHUNK --> IDB
@@ -52,9 +60,9 @@ flowchart TD
     LEGACY --> IDB
 ```
 
-The benchmark environment is deliberately separate from the AegisOps core. It produces controlled failures and telemetry; AegisOps consumes that telemetry and stores its own incident state independently.
+The benchmark environment is deliberately separate from the AegisOps core. It produces controlled failures and telemetry; AegisOps consumes that telemetry and stores its own incident state independently. The remediation layer stores proposals and review decisions in core PostgreSQL, while n8n handles the human-facing approval form. **Approval does not execute recovery commands.**
 
-Benchmark, database and monitoring services are managed by the root `docker-compose.yml`. During local development, AegisOps FastAPI and the existing npm-based n8n instance run on Windows. The local embedding model and cross-encoder support retrieval; PostgreSQL with pgvector stores runbooks and investigations. Phase 10 now integrates the allowlisted Phase 9 tools into a checkpointed LangGraph agent. The existing single-pass investigation endpoint remains available, while the n8n Investigation Intake sub-workflow calls the new `run-agent` endpoint.
+Benchmark, database and monitoring services are managed by the root `docker-compose.yml`. During local development, AegisOps FastAPI and the existing npm-based n8n instance run on Windows. The local embedding model and cross-encoder support retrieval; PostgreSQL with pgvector stores runbooks and investigations. Phase 10 integrates the allowlisted Phase 9 tools into a checkpointed LangGraph agent. Phase 11 extends the same n8n Investigation Intake sub-workflow to create an allowlisted remediation proposal after a saved investigation, retrieve its details, wait for an authenticated human decision, and store that decision through a protected FastAPI endpoint. The single-pass investigation endpoint remains available.
 
 ---
 
@@ -73,7 +81,8 @@ Benchmark, database and monitoring services are managed by the root `docker-comp
 | Phase 8 — Reranking & Context Engineering | ✅ Complete | Local cross-encoder reranking, duplicate-free context, excerpt budget and saved similarity/rerank scores |
 | Phase 9 — Tool Calling Layer | ✅ Complete | Read-only incident/metric/log tools, validated allowlists, bounded Gemini tool-call loop and controlled multi-tool investigation |
 | Phase 10 — LangGraph Investigation Agent | ✅ Complete | Stateful evidence and RAG, conditional Gemini/tool loop, PostgreSQL checkpointing, budget-aware structured report persistence and verified n8n integration |
-| Phase 11 — Human-in-the-Loop Remediation | ⏳ Next | Approval-gated remediation proposals; no unattended destructive actions |
+| Phase 11 — Human-in-the-Loop Remediation | ✅ Complete | Allowlisted recovery proposals, audited PostgreSQL review decisions, authenticated n8n approval form and tested approve/reject paths; no execution |
+| Phase 12 — Automated Remediation | ⏳ Next | Execute narrowly allowlisted recovery actions only after revalidating authorization and live incident state |
 
 Detailed phase documentation is available under:
 
@@ -304,6 +313,32 @@ See [Phase 10 implementation and verification](docs/phases/phase-10-langgraph-in
 
 ---
 
+## Phase 11 — Human-in-the-Loop Remediation
+
+Phase 11 adds a **decision boundary between investigation and action**. LangGraph saves an evidence-grounded report; the backend can then create a `PENDING` proposal only for an OPEN incident with a matching investigation and an allowlisted service/action pair. The initial `from-investigation` endpoint maps the affected benchmark service to a predefined restart candidate and uses the report summary as its rationale. Gemini does **not** receive permission to choose arbitrary Docker commands.
+
+### Existing n8n workflows extended, not replaced
+
+The original **AegisOps Incident Orchestration** workflow continues to route incoming incidents. The existing **AegisOps Investigation Intake** sub-workflow now checks for a saved investigation, calls the proposal API, takes the HTTP `201` branch, retrieves the stored proposal, waits on a Basic Auth-protected approval form and submits the response with a backend-only review-key credential. Recovered or unsupported incidents cannot reach approval; backend checks remain authoritative if incident status changes while a form is open.
+
+![Updated Investigation Intake workflow with conditional proposal creation, approval wait and review submission](docs/screenshots/phase%2011/updated_n8n_workflow.png)
+
+### Authenticated human review
+
+The review form presents the proposal ID, target, risk, rationale and expected outcome and requires an explicit `APPROVED` or `REJECTED` decision plus a note. Form access is protected independently from the `X-AegisOps-Review-Key` credential used by n8n to call FastAPI. The current `local-operator` reviewer field is an audit label, **not verified personal identity**.
+
+![Phase 11 human review form](docs/screenshots/phase%2011/auth_form.png)
+
+### Verified decisions and safety boundary
+
+- **Rejection:** PostgreSQL incident **16** / investigation **10** generated HIGH-risk proposal **1** (`restart_benchmark_postgresql`); the local operator rejected it. PostgreSQL stored the decision and review note.
+- **Approval:** Redis incident **17** / investigation **11** generated MEDIUM-risk proposal **2** (`restart_benchmark_redis`). The n8n Wait form resumed successfully, and `Submit Review Decision` returned **HTTP 200** with `status=APPROVED` and an audit timestamp.
+- **No command execution:** Both decisions only updated proposal records. Services were restored manually during controlled verification; action execution belongs to Phase 12.
+
+See [Phase 11 implementation, verification and safety boundaries](docs/phases/phase-11-human-in-the-loop-remediation.md).
+
+---
+
 ## Repository Structure
 
 ```text
@@ -342,12 +377,15 @@ AegisOps/
 │   │   │   ├── chunking.py
 │   │   │   ├── embeddings.py
 │   │   │   └── repository.py
+│   │   ├── remediation.py                  # Allowlisted action catalog
+│   │   ├── remediation_routes.py           # Proposal and review APIs
 │   │   └── main.py
 │   ├── sql/
 │   │   ├── 001_create_incidents.sql
 │   │   ├── 002_create_investigations.sql
 │   │   ├── 003_create_knowledge_documents.sql
-│   │   └── 004_create_knowledge_chunks.sql
+│   │   ├── 004_create_knowledge_chunks.sql
+│   │   └── 005_create_remediation_proposals.sql
 │   ├── scripts/
 │   │   ├── embedding_demo.py
 │   │   ├── seed_knowledge.py
@@ -382,7 +420,8 @@ AegisOps/
 │   │   ├── phase-07-rag-pipeline.md
 │   │   ├── phase-08-context-engineering.md
 │   │   ├── phase-09-tool-calling-layer.md
-│   │   └── phase-10-langgraph-investigation-agent.md
+│   │   ├── phase-10-langgraph-investigation-agent.md
+│   │   └── phase-11-human-in-the-loop-remediation.md
 │   ├── runbooks/
 │   │   ├── redis-availability.md
 │   │   ├── postgresql-availability.md
@@ -411,9 +450,12 @@ AegisOps/
 │       ├── phase 9/
 │       │   ├── tool-calls.png
 │       │   └── investigation-report.png
-│       └── phase 10/
-│           ├── langgraph-execution.png
-│           └── n8n-integration.png
+│       ├── phase 10/
+│       │   ├── langgraph-execution.png
+│       │   └── n8n-integration.png
+│       └── phase 11/
+│           ├── auth_form.png
+│           └── updated_n8n_workflow.png
 │
 ├── n8n-workflows/            # Add actual n8n exports before committing
 ├── .env.example
@@ -474,6 +516,10 @@ POST /investigations/{incident_id}/run
 POST /investigations/{incident_id}/run-agent?run_id={uuid}
 GET  /investigations/{investigation_id}
 GET  /investigations/by-incident/{incident_id}
+POST /remediations/proposals
+GET  /remediations/proposals/{proposal_id}
+POST /remediations/from-investigation/{investigation_id}
+POST /remediations/proposals/{proposal_id}/review
 ```
 
 `/health` confirms that the FastAPI process is alive.
@@ -484,7 +530,9 @@ GET  /investigations/by-incident/{incident_id}
 
 `POST /incidents/detect` manually runs one detection cycle for testing and debugging. Normal detection is performed automatically by the background worker.
 
-`POST /investigations/{incident_id}/run` remains the original single-pass Gemini investigation endpoint for OPEN incidents. `POST /investigations/{incident_id}/run-agent?run_id={uuid}` uses the checkpointed LangGraph workflow; a stable run ID enables checkpoint reuse and prevents a completed run from being re-executed on an identical request. The two GET investigation endpoints expose saved full reports and per-incident history without additional model calls. The new agent endpoint has been tested independently against a resolved incident and end to end from n8n against an OPEN Redis incident; it is not yet production hardened for overlapping concurrent retries or exactly-once report writes.
+`POST /investigations/{incident_id}/run` remains the original single-pass Gemini investigation endpoint for OPEN incidents. `POST /investigations/{incident_id}/run-agent?run_id={uuid}` uses the checkpointed LangGraph workflow; a stable run ID enables checkpoint reuse and prevents a completed run from being re-executed on an identical request. The two GET investigation endpoints expose saved full reports and per-incident history without additional model calls. The agent endpoint has been tested independently and end to end from n8n; it is not yet production hardened for overlapping concurrent retries or exactly-once report writes.
+
+Phase 11 adds a controlled proposal API and a separate authenticated review API. The `from-investigation` endpoint requires an OPEN incident and matching saved investigation, maps the benchmark service to a fixed allowlisted action, and stores a `PENDING` record. The review endpoint requires `X-AegisOps-Review-Key` and records an explicit decision plus note only while the proposal is pending and unexpired. Approval of a resolved incident is rejected; no endpoint here runs Docker commands.
 
 ---
 
@@ -613,9 +661,10 @@ INCIDENT_DETECTION_INTERVAL_SECONDS=10
 N8N_INCIDENT_WEBHOOK_URL=http://127.0.0.1:5678/webhook/aegisops-incident
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.5-flash-lite
+REMEDIATION_REVIEW_KEY=
 ```
 
-The shared PostgreSQL default remains `5432`. Developers can override it in their local `.env` when the port is already in use. Keep the real `GEMINI_API_KEY` only in the untracked `.env` file; never commit credentials or raw production logs.
+The shared PostgreSQL default remains `5432`. Developers can override it in their local `.env` when the port is already in use. Keep actual `GEMINI_API_KEY` and `REMEDIATION_REVIEW_KEY` values only in the untracked `.env` file. Store the review key in an n8n Header Auth credential, not in an exported workflow; keep the Wait-form Basic Auth password separate. Never commit credentials, signed form URLs or raw production logs.
 
 ---
 
@@ -663,7 +712,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-The incident detector starts automatically with FastAPI. Start the existing Windows n8n installation separately with `n8n`, open `http://127.0.0.1:5678`, and publish **AegisOps Incident Orchestration**. n8n and FastAPI currently share Windows localhost; moving either into a container requires reviewing the API and webhook URLs.
+The incident detector starts automatically with FastAPI. Start the existing Windows n8n installation separately with `n8n`, open `http://127.0.0.1:5678`, and publish **AegisOps Incident Orchestration** and **AegisOps Investigation Intake**. Configure the Phase 11 SQL migration, review key and private n8n credentials before enabling the approval branch. n8n and FastAPI currently share Windows localhost; moving either into a container requires reviewing the API and webhook URLs.
 
 ---
 
@@ -699,41 +748,40 @@ Detailed implementation notes:
 - [Phase 8 — Reranking & Context Engineering](docs/phases/phase-08-context-engineering.md)
 - [Phase 9 — Tool Calling Layer](docs/phases/phase-09-tool-calling-layer.md)
 - [Phase 10 — LangGraph Investigation Agent](docs/phases/phase-10-langgraph-investigation-agent.md)
+- [Phase 11 — Human-in-the-Loop Remediation](docs/phases/phase-11-human-in-the-loop-remediation.md)
 
 ---
 
 ## Current Milestone
 
-The verified end-to-end workflow is now:
+The verified end-to-end workflow now includes an explicit approval gate:
 
 ```text
-Controlled benchmark outage
+Controlled benchmark outage → Prometheus + deterministic detection
         ↓
-Prometheus + deterministic detection rules
+Durable OPEN incident → n8n severity routing and live recheck
         ↓
-Durable OPEN incident in AegisOps PostgreSQL
+Checkpointed LangGraph investigation + bounded diagnostic tools
         ↓
-n8n severity routing and live OPEN-state recheck
+Structured investigation and evidence saved in PostgreSQL
         ↓
-Investigation Intake calls checkpointed FastAPI run-agent endpoint
+n8n checks investigation ID and requests a remediation proposal
         ↓
-LangGraph collects incident evidence and reranked runbooks
+Backend verifies OPEN incident, matching investigation and allowlisted action
         ↓
-Gemini decides whether additional evidence is needed
+PENDING proposal in PostgreSQL → n8n fetches proposal details
         ↓
-Allowlisted incident / metric / benchmark log tools
+Basic Auth-protected Wait form; operator approves or rejects with a note
         ↓
-Gemini continues or reaches a bounded tool budget
+Authenticated FastAPI review endpoint rechecks state and records decision
         ↓
-Structured report generation and runbook source validation
-        ↓
-Investigation and evidence persisted in PostgreSQL
-        ↓
-n8n receives the investigation ID
+STOP: no remediation execution in Phase 11
 ```
 
-**End-to-end verification:** A fresh HIGH Redis outage created incident **15**; n8n reached Investigation Intake; the LangGraph agent ran its allowed incident, metric and service-log tools; and the resulting saved investigation **9** was retrieved through the API. Its termination was `TOOL_BUDGET_REACHED`, producing a qualified report rather than claiming certainty about an unproven root cause.
+**End-to-end verification:** Incident **16** / investigation **10** produced PostgreSQL proposal **1**, which was **REJECTED**. Incident **17** / investigation **11** produced Redis proposal **2**; the Wait form resumed and the HTTP review endpoint returned **200** with status **APPROVED**. Earlier LangGraph checkpoint and RAG verification from Phase 10 remain intact.
 
-Checkpoint recovery is verified across distinct Python processes, and repeated requests with a finished run ID return the existing saved report. This is **not yet exactly-once execution** under concurrent retries or crashes between final report persistence and the following checkpoint. The current agent is read-only; no automated remediation has been authorized or implemented.
+**Safety boundary:** The initial action catalog is fixed to the three benchmark restart candidates. Stored approvals authorize no command execution in this phase; Phase 12 must recheck the latest incident state and exact action/target authorization before executing anything. Operator identity is presently a local review label, and the signed approval URL is retrieved manually from n8n rather than automatically delivered.
 
-**Next: Phase 11 — Human-in-the-Loop Remediation.** The streamlined roadmap has **21 total phases**, with Phases 0–10 complete. Export the main and intake n8n workflows to `n8n-workflows/` from the local instance; screenshots are verification evidence, not executable workflow definitions.
+**Closeout before further live tests:** Confirm benchmark Redis and PostgreSQL are restored; unpin any mock LangGraph investigation output; publish both n8n workflows; export their actual JSON definitions into `n8n-workflows/` before a portfolio release. These steps are operational checks, not additional results claimed by the screenshots.
+
+**Next: Phase 12 — Automated Remediation.** The streamlined roadmap has **21 total phases**, with Phases 0–11 complete. The next phase will implement tightly scoped approved actions, idempotency, race-safe revalidation and dry-run testing; independent recovery verification follows in Phase 13.
