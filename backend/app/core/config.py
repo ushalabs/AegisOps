@@ -39,6 +39,7 @@ class Settings:
     )
 
     remediation_review_key: str = os.getenv("REMEDIATION_REVIEW_KEY", "")
+    remediation_execution_key: str = os.getenv("REMEDIATION_EXECUTION_KEY", "")
 
 
 settings = Settings()

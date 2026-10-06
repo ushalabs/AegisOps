@@ -1,0 +1,470 @@
+{
+  "name": "AegisOps Investigation Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -800,
+        -48
+      ],
+      "id": "9ea46807-16af-41bd-a358-9d554421877e",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d18e1f1a-dd47-4846-8ca7-3f99633ee112",
+              "name": "intake_status",
+              "value": "RECEIVED",
+              "type": "string"
+            },
+            {
+              "id": "f7b133ea-16a4-4558-a5df-69ac59525e48",
+              "name": "investigation_state",
+              "value": "PENDING",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -608,
+        -48
+      ],
+      "id": "7254aac7-eb97-4f07-a3df-96b77d821b45",
+      "name": "Register Investigation Intake"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=\n{{ \n  'http://127.0.0.1:8000/investigations/' +\n  $('When Executed by Another Workflow').first().json.incident_id +\n  '/run-agent?run_id=00000000-0000-4000-8000-' +\n  String($execution.id).padStart(12, '0')\n}}\n",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 600000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -400,
+        -48
+      ],
+      "id": "22a52fff-0ffe-41d3-872a-d27d20dc5f0d",
+      "name": "Run LangGraph Investigation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f93faec4-bc0e-43bb-b387-54b1433916e9",
+              "leftValue": "={{ Number($json.investigation_id ?? 0) }}\n",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -176,
+        -48
+      ],
+      "id": "f84807f7-e8c4-4676-9cbe-9de484f63e00",
+      "name": "Investigation Completed?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "= {{ 'http://127.0.0.1:8000/remediations/from-investigation/' + $json.investigation_id }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        48,
+        -144
+      ],
+      "id": "462ecb12-55e0-4ed2-b5e7-338b7e87aaa9",
+      "name": "Generate Remediation Proposal"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "bc105793-bade-49b9-9c11-8e94bae70d65",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": "201",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        256,
+        -48
+      ],
+      "id": "14743995-e2ec-4f62-9990-507d86980899",
+      "name": "Proposal Created?"
+    },
+    {
+      "parameters": {
+        "url": "= {{ 'http://127.0.0.1:8000/remediations/proposals/' + $('Generate Remediation Proposal').first().json.body.id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        480,
+        -144
+      ],
+      "id": "90d9d330-79e4-40f4-b8f2-aa78c8777d30",
+      "name": "Fetch Proposal Details"
+    },
+    {
+      "parameters": {
+        "resume": "form",
+        "incomingAuthentication": "basicAuth",
+        "formTitle": "AegisOps Remediation Review",
+        "formDescription": "=\n{{\n  'Proposal #' + $json.id +\n  '\\nIncident: ' + $json.incident_id +\n  '\\nAction: ' + $json.action_key +\n  '\\nTarget: ' + $json.target_service +\n  '\\nRisk: ' + $json.risk_level +\n  '\\n\\nReason: ' + $json.rationale +\n  '\\n\\nExpected outcome: ' + $json.expected_outcome\n}}\n",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "decision",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "APPROVED"
+                  },
+                  {
+                    "option": "REJECTED"
+                  }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "note",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        },
+        "limitWaitTime": true,
+        "resumeAmount": 23,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        -64
+      ],
+      "id": "f3a25368-70cc-42af-9103-4205eabe9585",
+      "name": "Wait for Human Approval",
+      "webhookId": "c049fe2e-458f-4a15-9a2c-73312a3ddd5a",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "bCx2D6iRMcYivuf5",
+          "name": "Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://127.0.0.1:8000/remediations/proposals/' + $('Fetch Proposal Details').first().json.id + '/review' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "decision",
+              "value": "={{ $json.decision }}"
+            },
+            {
+              "name": "reviewer",
+              "value": "local-operator"
+            },
+            {
+              "name": "note",
+              "value": "={{ $json.note }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        896,
+        -64
+      ],
+      "id": "c5f22da1-402f-4b78-95f0-d131e77b4365",
+      "name": "Submit Review Decision",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Hn9ENxAeeNFKMmC1",
+          "name": "AegisOps Review Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cd3893b6-aa89-49b3-8bf7-c7c3ef3f0b7f",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "b5bd0dda-e27a-4f6d-b0f1-7b0c4ebac607",
+              "leftValue": "={{ $json.body.status }}",
+              "rightValue": "APPROVED",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1120,
+        -64
+      ],
+      "id": "2fe77d37-edc7-4718-8daf-f35b0732c2ee",
+      "name": "Review Approved?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{   'http://127.0.0.1:8000/remediations/proposals/' +   $('Fetch Proposal Details').first().json.id +   '/execute' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1344,
+        -160
+      ],
+      "id": "6787bd4d-8e34-4cad-b279-b92ec938141a",
+      "name": "Execute Approved Remediation",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "UotRPYodDTEGoeAW",
+          "name": "AegisOps Execution Key"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Register Investigation Intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Register Investigation Intake": {
+      "main": [
+        [
+          {
+            "node": "Run LangGraph Investigation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run LangGraph Investigation": {
+      "main": [
+        [
+          {
+            "node": "Investigation Completed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Investigation Completed?": {
+      "main": [
+        [
+          {
+            "node": "Generate Remediation Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Remediation Proposal": {
+      "main": [
+        [
+          {
+            "node": "Proposal Created?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Proposal Created?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Proposal Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Proposal Details": {
+      "main": [
+        [
+          {
+            "node": "Wait for Human Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Human Approval": {
+      "main": [
+        [
+          {
+            "node": "Submit Review Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit Review Decision": {
+      "main": [
+        [
+          {
+            "node": "Review Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review Approved?": {
+      "main": [
+        [
+          {
+            "node": "Execute Approved Remediation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "543a0120-5801-450b-889e-7f4871b8b5c0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a1b971ccd542966bf98edc508aa5ffb232b59afc6dd293657cfd10c7dda0468d"
+  },
+  "nodeGroups": [],
+  "id": "RPbY0kccGwd96dbh",
+  "tags": []
+}

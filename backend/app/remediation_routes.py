@@ -3,9 +3,13 @@ import psycopg
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
+from datetime import datetime, timezone
 
 from app.db.database import get_connection
-from app.remediation import REMEDIATION_CATALOG
+from app.remediation import (
+    REMEDIATION_CATALOG,
+    execute_remediation_action,
+)
 
 from secrets import compare_digest
 from typing import Literal
@@ -417,3 +421,208 @@ def review_proposal(
             status_code=503,
             detail="Could not save the review decision.",
         )
+
+@router.post("/proposals/{proposal_id}/execute")
+def execute_approved_proposal(
+    proposal_id: int,
+    execution_key: str | None = Header(
+        default=None,
+        alias="X-AegisOps-Execution-Key",
+    ),
+):
+    expected_key = settings.remediation_execution_key
+
+    if (
+        not expected_key
+        or not execution_key
+        or not compare_digest(execution_key, expected_key)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid remediation execution credentials.",
+        )
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+
+                # Find the associated incident first so we can
+                # preserve the same lock order used elsewhere.
+                cur.execute(
+                    """
+                    SELECT incident_id
+                    FROM remediation_proposals
+                    WHERE id = %s
+                    """,
+                    (proposal_id,),
+                )
+
+                reference = cur.fetchone()
+
+                if reference is None:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="Remediation proposal not found.",
+                    )
+
+                cur.execute(
+                    """
+                    SELECT id, status
+                    FROM incidents
+                    WHERE id = %s
+                    FOR UPDATE
+                    """,
+                    (reference["incident_id"],),
+                )
+
+                incident = cur.fetchone()
+
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        incident_id,
+                        action_key,
+                        target_service,
+                        status,
+                        expires_at
+                    FROM remediation_proposals
+                    WHERE id = %s
+                    FOR UPDATE
+                    """,
+                    (proposal_id,),
+                )
+
+                proposal = cur.fetchone()
+
+                if proposal["status"] != "APPROVED":
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Only APPROVED proposals can be executed.",
+                    )
+
+                if proposal["expires_at"] <= datetime.now(timezone.utc):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="The remediation authorization has expired.",
+                    )
+
+                if incident["status"] != "OPEN":
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Cannot execute remediation for a resolved incident.",
+                    )
+
+                action = REMEDIATION_CATALOG.get(
+                    proposal["action_key"]
+                )
+
+                if action is None:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Proposal references an unsupported action.",
+                    )
+
+                if action.target_service != proposal["target_service"]:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Proposal target does not match remediation catalog.",
+                    )
+
+                # Idempotency:
+                # never execute the same proposal twice.
+                cur.execute(
+                    """
+                    SELECT *
+                    FROM remediation_executions
+                    WHERE proposal_id = %s
+                    """,
+                    (proposal_id,),
+                )
+
+                existing_execution = cur.fetchone()
+
+                if existing_execution is not None:
+                    return {
+                        **existing_execution,
+                        "reused": True,
+                    }
+
+                cur.execute(
+                    """
+                    INSERT INTO remediation_executions (
+                        proposal_id,
+                        incident_id,
+                        action_key,
+                        target_service,
+                        status
+                    )
+                    VALUES (%s, %s, %s, %s, 'RUNNING')
+                    RETURNING id
+                    """,
+                    (
+                        proposal["id"],
+                        proposal["incident_id"],
+                        proposal["action_key"],
+                        proposal["target_service"],
+                    ),
+                )
+
+                execution_id = cur.fetchone()["id"]
+
+    except psycopg.Error:
+        raise HTTPException(
+            status_code=503,
+            detail="Could not prepare remediation execution.",
+        )
+
+    # Docker is intentionally executed outside the DB transaction.
+    result = execute_remediation_action(
+        proposal["action_key"]
+    )
+
+    final_status = (
+        "SUCCEEDED"
+        if result["success"]
+        else "FAILED"
+    )
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    UPDATE remediation_executions
+                    SET
+                        status = %s,
+                        finished_at = NOW(),
+                        exit_code = %s,
+                        output = %s,
+                        error = %s
+                    WHERE id = %s
+                    RETURNING *
+                    """,
+                    (
+                        final_status,
+                        result["exit_code"],
+                        result["stdout"][:4000],
+                        result["stderr"][:4000],
+                        execution_id,
+                    ),
+                )
+
+                execution = cur.fetchone()
+
+    except psycopg.Error:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Remediation command ran, but its execution "
+                "record could not be finalized."
+            ),
+        )
+
+    return {
+        **execution,
+        "reused": False,
+    }

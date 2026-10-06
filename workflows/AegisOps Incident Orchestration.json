@@ -1,0 +1,477 @@
+{
+  "name": "AegisOps Incident Orchestration",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "aegisops-incident",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1184,
+        -112
+      ],
+      "id": "5e252832-69c0-4831-ace0-e8ade916e895",
+      "name": "Webhook",
+      "webhookId": "ba030bf7-c8d5-41c6-aa82-37d6561def9e"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.severity }}",
+                    "rightValue": "CRITICAL",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "900fe96f-85ae-4432-8666-5987ca66b0a4"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CRITICAL"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "79dc3f46-3b7f-422b-a14a-477db7c57c82",
+                    "leftValue": "={{ $json.body.severity }}",
+                    "rightValue": "HIGH",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "HIGH"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "07c98ab5-5ba2-4a20-8b9e-c8ad1548c3e1",
+                    "leftValue": "={{ $json.body.severity }}",
+                    "rightValue": "MEDIUM",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "MEDIUM"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "0dfff9b8-1aa9-4d8c-b824-41b20ed3193c",
+                    "leftValue": "={{ $json.body.severity }}",
+                    "rightValue": "LOW",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "LOW"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -976,
+        -144
+      ],
+      "id": "3c3eff45-786e-48ab-8f81-4590db7376de",
+      "name": "Severity Router"
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -672,
+        -48
+      ],
+      "id": "ac20b88c-69e4-4a09-9258-b590a1b0eaed",
+      "name": "Wait 30 seconds",
+      "webhookId": "52689985-31dd-4474-8739-cdc6907918bb"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'http://127.0.0.1:8000/incidents/' + $json.body.incident_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -672,
+        160
+      ],
+      "id": "7fe0c2f8-67be-402e-b0ac-9734013d0656",
+      "name": "Get Incident Status",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "be984c12-cdda-430b-9385-c389d7072f2f",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "OPEN",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -448,
+        -48
+      ],
+      "id": "90f010c8-3d07-4f0a-a6b3-5cdcb8385024",
+      "name": "Still Open?"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "RPbY0kccGwd96dbh",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/RPbY0kccGwd96dbh",
+          "cachedResultName": "AegisOps Investigation Intake"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -48,
+        -64
+      ],
+      "id": "df6a5bd6-2dc5-45a1-8ac2-204558df9f99",
+      "name": "Call 'AegisOps Investigation Intake'"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "afe3b40a-6cf0-4a33-8c93-2e8c3714a3bd",
+              "name": "orchestration_stage",
+              "value": "SKIPPED_RECOVERED",
+              "type": "string"
+            },
+            {
+              "id": "f7cdbd35-ca26-490d-97e6-d3d92b6f1157",
+              "name": "=handling_mode",
+              "value": "={{ ['HIGH', 'CRITICAL'].includes($json.severity) ? 'IMMEDIATE' : 'DELAYED' }}",
+              "type": "string"
+            },
+            {
+              "id": "fbf3c789-aa11-4c2b-a283-c0807798ea33",
+              "name": "skip_reason",
+              "value": "Incident recovered before investigation",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -240,
+        160
+      ],
+      "id": "e72efe6a-fc00-429e-a822-ae89673359a0",
+      "name": "Skip Recovered Incident"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'http://127.0.0.1:8000/incidents/' + $json.body.incident_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -672,
+        -272
+      ],
+      "id": "9fc0b16c-a5b6-4c99-8e31-eb43ad43cdfb",
+      "name": "Get Immediate Incident Status",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c7224e92-75a5-4e2f-a4fc-b2aadfd5015b",
+              "name": "=incident_id",
+              "value": "={{ $json.id }}",
+              "type": "number"
+            },
+            {
+              "id": "e186ca08-ec94-40fd-846b-80383f4f5c4c",
+              "name": "=rule_key",
+              "value": "={{ $json.body.rule_key }}",
+              "type": "string"
+            },
+            {
+              "id": "8c5fdb4c-9767-4ada-b2a2-73d8a7a28a62",
+              "name": "=title",
+              "value": "={{ $json.body.title }}",
+              "type": "string"
+            },
+            {
+              "id": "3400c067-24a4-48c3-a638-6a1b4725f0a6",
+              "name": "=service",
+              "value": "={{ $json.body.service }}",
+              "type": "string"
+            },
+            {
+              "id": "b2cb8c57-fbf0-41e3-9fc2-b0d08b967ed6",
+              "name": "=severity",
+              "value": "={{ $json.body.severity }}",
+              "type": "string"
+            },
+            {
+              "id": "63c31140-58c7-4db5-b00f-55abcb824913",
+              "name": "=status",
+              "value": "={{ $json.body.status }}",
+              "type": "string"
+            },
+            {
+              "id": "6888f8ac-cbca-4e8d-af8b-b31b66ec4f7b",
+              "name": "=trigger_value",
+              "value": "={{ $json.body.trigger_value }}",
+              "type": "number"
+            },
+            {
+              "id": "afc4352b-99b0-472b-bba4-9dcfadb49cbd",
+              "name": "=threshold",
+              "value": "={{ $json.body.threshold }}",
+              "type": "number"
+            },
+            {
+              "id": "a400b117-b3c2-44f0-b4fd-d24fd9f0b09f",
+              "name": "=handling_mode",
+              "value": "={{ ['HIGH', 'CRITICAL'].includes($json.severity) ? 'IMMEDIATE' : 'DELAYED' }}",
+              "type": "string"
+            },
+            {
+              "id": "2bde5c0e-d50d-4c45-9ed9-db01c86cd013",
+              "name": "orchestration_stage",
+              "value": "INVESTIGATION_READY",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -240,
+        -272
+      ],
+      "id": "ffb2ea34-a849-4fa5-b51a-fa7d332ba403",
+      "name": "Prepare Investigation"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Severity Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Severity Router": {
+      "main": [
+        [
+          {
+            "node": "Get Immediate Incident Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Immediate Incident Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 30 seconds",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 30 seconds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 30 seconds": {
+      "main": [
+        [
+          {
+            "node": "Get Incident Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Incident Status": {
+      "main": [
+        [
+          {
+            "node": "Still Open?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still Open?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Investigation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Recovered Incident",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Immediate Incident Status": {
+      "main": [
+        [
+          {
+            "node": "Still Open?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Investigation": {
+      "main": [
+        [
+          {
+            "node": "Call 'AegisOps Investigation Intake'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "484ef612-958c-4b88-97e3-04ece1f7b262",
+  "meta": {
+    "instanceId": "a1b971ccd542966bf98edc508aa5ffb232b59afc6dd293657cfd10c7dda0468d"
+  },
+  "nodeGroups": [],
+  "id": "3PWnHXXkwFNWoEDO",
+  "tags": []
+}
