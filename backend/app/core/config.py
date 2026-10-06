@@ -41,5 +41,14 @@ class Settings:
     remediation_review_key: str = os.getenv("REMEDIATION_REVIEW_KEY", "")
     remediation_execution_key: str = os.getenv("REMEDIATION_EXECUTION_KEY", "")
 
+    operator_console_username: str = os.getenv(
+    "OPERATOR_CONSOLE_USERNAME",
+    "",
+    )
+    operator_console_password: str = os.getenv(
+        "OPERATOR_CONSOLE_PASSWORD",
+        "",
+    )
+
 
 settings = Settings()
