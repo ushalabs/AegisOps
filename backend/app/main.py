@@ -17,6 +17,10 @@ from app.postmortem_routes import (
     router as postmortem_router,
 )
 
+from app.dashboard_routes import (
+    router as dashboard_router,
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -47,6 +51,7 @@ app.include_router(investigation_router)
 app.include_router(remediation_router)
 app.include_router(operator_router)
 app.include_router(postmortem_router)
+app.include_router(dashboard_router)
 
 @app.get("/health")
 def health_check():

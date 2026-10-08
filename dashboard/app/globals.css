@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: #f5f8fc;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  color: #111827;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(244, 114, 182, 0.16), transparent 24%),
+    radial-gradient(circle at 52% 16%, rgba(139, 92, 246, 0.18), transparent 26%),
+    radial-gradient(circle at 84% 72%, rgba(56, 189, 248, 0.16), transparent 26%),
+    linear-gradient(135deg, #cec8d8 0%, #cfc9da 22%, #c9c1d9 48%, #c6c0d6 72%, #cdd6df 100%);
+  background-attachment: fixed;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.site-bg-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.16) 0%,
+      rgba(255, 255, 255, 0.06) 100%
+    );
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  box-shadow:
+    0 10px 30px rgba(78, 55, 122, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.24);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow:
+    0 8px 24px rgba(78, 55, 122, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.glass-soft {
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+}
+
+.glass-input {
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow:
+    0 6px 18px rgba(78, 55, 122, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
