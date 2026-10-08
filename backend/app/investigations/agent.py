@@ -19,7 +19,9 @@ from app.investigations.tools import execute_tool
 from app.knowledge.repository import search_knowledge_chunks
 from app.knowledge.reranking import build_rag_context
 from app.investigations.repository import save_investigation
-
+from app.postmortem import (
+    search_incident_memories,
+)
 
 MAX_TOOL_ROUNDS = 3
 MAX_TOOL_CALLS = 6
@@ -46,6 +48,10 @@ class InvestigationState(TypedDict):
     structured_report: NotRequired[dict[str, Any]]
     investigation_id: NotRequired[int]
 
+    historical_incidents: NotRequired[
+    list[dict[str, Any]]
+]
+
 def collect_evidence_node(state: InvestigationState) -> dict:
     evidence = collect_incident_evidence(
         state["incident_id"]
@@ -57,14 +63,17 @@ def collect_evidence_node(state: InvestigationState) -> dict:
     }
 
 
-def retrieve_knowledge_node(state: InvestigationState) -> dict:
+def retrieve_knowledge_node(
+    state: InvestigationState,
+) -> dict:
     incident = state["evidence"]["incident"]
 
     query = (
         f"{incident['title']}. "
         f"Affected service: {incident['service']}. "
         "Find troubleshooting procedures, possible causes, "
-        "diagnostic checks and recovery verification."
+        "diagnostic checks, recovery verification, and "
+        "similar historical incidents."
     )
 
     candidates = search_knowledge_chunks(
@@ -79,9 +88,46 @@ def retrieve_knowledge_node(state: InvestigationState) -> dict:
         max_excerpt_chars=2400,
     )
 
+    historical_results = (
+        search_incident_memories(
+            query=query,
+            limit=3,
+            exclude_incident_id=(
+                state["incident_id"]
+            ),
+        )
+    )
+
+    historical_incidents = [
+        {
+            "incident_id":
+                result["incident_id"],
+            "title":
+                result["title"],
+            "service":
+                result["service"],
+            "rule_key":
+                result["rule_key"],
+            "severity":
+                result["severity"],
+            "similarity":
+                result["similarity"],
+            "memory_text":
+                result["memory_text"][:2000],
+        }
+        for result in historical_results
+    ]
+
     return {
         "rag_context": context,
-        "events": ["Knowledge retrieved and reranked"],
+        "historical_incidents":
+            historical_incidents,
+        "events": [
+            (
+                "Runbooks and historical "
+                "incident memories retrieved"
+            )
+        ],
     }
 
 
@@ -101,11 +147,18 @@ def gemini_decision_node(state: InvestigationState) -> dict:
     else:
         # First reasoning step: provide the collected evidence.
         context = {
-            "incident": state["evidence"]["incident"],
-            "evidence": state["evidence"],
-            "retrieved_knowledge": state["rag_context"],
+            "incident":
+                    state["evidence"]["incident"],
+            "evidence":
+                    state["evidence"],
+            "retrieved_knowledge":
+                    state["rag_context"],
+            "similar_historical_incidents":
+                    state.get(
+                        "historical_incidents",
+                        [],
+                    ),
         }
-
         request = {
             "input": (
                 "Investigate the following AegisOps incident. "
@@ -257,6 +310,11 @@ def finalize_report_node(state: InvestigationState) -> dict:
     complete_evidence = {
         **state["evidence"],
         "retrieved_knowledge": state["rag_context"],
+        "similar_historical_incidents":
+            state.get(
+                "historical_incidents",
+                [],
+        ),
         "agent_tool_history": state.get("tool_history", []),
         "preliminary_agent_summary": state.get(
             "final_response", ""

@@ -87,6 +87,16 @@ Rules:
 - Only reference source IDs actually provided in retrieved_knowledge.
 - Do not cite a runbook as proof that a particular failure occurred.
 - Leave runbook_source_ids empty if no retrieved knowledge was used.
+- Historical incident memories are reference material,
+  not proof that the current incident has the same cause.
+- Similarity means semantic relevance, not causal identity.
+- Never transfer a historical incident's root cause to the
+  current incident unless current evidence independently
+  supports it.
+- Historical remediation success does not prove that the
+  same remediation is correct for the current incident.
+- Use historical incidents to suggest hypotheses and checks,
+  not to establish facts about the current incident.
 
 INCIDENT CONTEXT:
 {json.dumps(incident_context, indent=2, default=str)}

@@ -518,8 +518,8 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        1328,
-        -144
+        1344,
+        -240
       ],
       "id": "36093c83-a630-4481-8a03-3473281c1b9b",
       "name": "Recovery Outcome"
@@ -548,7 +548,7 @@
       "typeVersion": 3.5,
       "position": [
         1600,
-        -336
+        -384
       ],
       "id": "1bf9ce73-69ff-4e46-8ea1-bbfcbdc1bd8b",
       "name": "Recovery Not Confirmed"
@@ -577,7 +577,7 @@
       "typeVersion": 3.5,
       "position": [
         1600,
-        -128
+        -208
       ],
       "id": "e099017b-d417-4180-a321-e8a6787f72f5",
       "name": "Recovery Inconclusive"
@@ -606,7 +606,7 @@
       "typeVersion": 3.5,
       "position": [
         1600,
-        64
+        -48
       ],
       "id": "49dde1a8-b88a-4377-b072-93d681a17f8b",
       "name": "Recovery Verification Error"
@@ -639,6 +639,144 @@
       ],
       "id": "9f4aa242-97c6-439d-95d1-0ea040a16fe7",
       "name": "Recovery Confirmed"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://127.0.0.1:8000/postmortems/incidents/' + $('Execute Approved Remediation').first().json.body.incident_id + '/generate' }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1600,
+        144
+      ],
+      "id": "37c85c21-184f-4791-a90e-ce172b7d5cc1",
+      "name": "Generate Postmortem"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4f7809c1-8c7b-4130-85a0-5d282b88ca03",
+              "leftValue": "={{ $json.body?.postmortem_id != null && $json.body?.memory_id != null }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1824,
+        144
+      ],
+      "id": "78e56839-c93c-4dc2-b911-5ca9b2e6fa25",
+      "name": "Postmortem Created?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "bf9b4785-2c66-4826-a22a-57374aa2bbbb",
+              "name": "outcome",
+              "value": "POSTMORTEM_CREATED",
+              "type": "string"
+            },
+            {
+              "id": "3cf3ed1d-add6-4fd1-b919-0fe762d4c086",
+              "name": "message",
+              "value": "Incident recovery was confirmed, the postmortem was generated, and the incident memory was stored for future investigations",
+              "type": "string"
+            },
+            {
+              "id": "bab83728-855c-4b98-84da-f0c05aeaafc3",
+              "name": "incident_id",
+              "value": "={{ $('Generate Postmortem').first().json.body.incident_id }}",
+              "type": "number"
+            },
+            {
+              "id": "5be59798-1d39-447d-875a-c164c4aed998",
+              "name": "postmortem_id",
+              "value": "={{ $('Generate Postmortem').first().json.body.postmortem_id }}",
+              "type": "number"
+            },
+            {
+              "id": "c7b3888b-81a4-4706-9c38-3da4c4cacab8",
+              "name": "memory_id",
+              "value": "={{ $('Generate Postmortem').first().json.body.memory_id }}",
+              "type": "number"
+            },
+            {
+              "id": "aac96b05-a4bd-403b-8cd9-4ccb44b6418e",
+              "name": "reused",
+              "value": "={{ $('Generate Postmortem').first().json.body.reused }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2048,
+        48
+      ],
+      "id": "2f4438f0-8a15-42f6-b422-22638d374afa",
+      "name": "Postmortem Generation Succesfull"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fbf210e2-e9dd-4477-8c8a-ee0968adc9f5",
+              "name": "outcome",
+              "value": "POSTMORTEM_GENERATION_FAILED",
+              "type": "string"
+            },
+            {
+              "id": "e5cfb917-83ac-46a4-b82d-10eabe30d362",
+              "name": "message",
+              "value": "Recovery was confirmed, but AegisOps could not generate or store the incident postmortem and memory.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2048,
+        240
+      ],
+      "id": "3b89e980-deac-4074-850d-c782c7ed6419",
+      "name": "Postmortem Generation Failed"
     }
   ],
   "pinData": {},
@@ -857,6 +995,46 @@
           }
         ]
       ]
+    },
+    "Recovery Confirmed": {
+      "main": [
+        [
+          {
+            "node": "Generate Postmortem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Postmortem": {
+      "main": [
+        [
+          {
+            "node": "Postmortem Created?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postmortem Created?": {
+      "main": [
+        [
+          {
+            "node": "Postmortem Generation Succesfull",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Postmortem Generation Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -864,7 +1042,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "31ba05ac-fb47-4057-a987-b3713407094b",
+  "versionId": "f34ea53a-21eb-4b37-bada-ea3d0b6beccc",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "a1b971ccd542966bf98edc508aa5ffb232b59afc6dd293657cfd10c7dda0468d"

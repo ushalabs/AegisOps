@@ -11,6 +11,9 @@ from app.knowledge.repository import search_knowledge_chunks
 from app.knowledge.reranking import build_rag_context
 from fastapi import Query
 from uuid import UUID
+from app.postmortem import (
+    search_incident_memories,
+)
 
 from fastapi import Query
 from langgraph.checkpoint.postgres import PostgresSaver
@@ -78,6 +81,33 @@ def run_investigation(incident_id: int):
             max_chunks=3,
             max_excerpt_chars=2400,
         )
+        historical_results = (
+    search_incident_memories(
+        query=search_query,
+        limit=3,
+        exclude_incident_id=incident_id,
+    )
+)
+
+        evidence["similar_historical_incidents"] = [
+            {
+                "incident_id":
+                    result["incident_id"],
+                "title":
+                    result["title"],
+                "service":
+                    result["service"],
+                "rule_key":
+                    result["rule_key"],
+                "severity":
+                    result["severity"],
+                "similarity":
+                    result["similarity"],
+                "memory_text":
+                    result["memory_text"][:2000],
+            }
+            for result in historical_results
+        ]
 
     except psycopg.Error as exc:
         logger.exception(
