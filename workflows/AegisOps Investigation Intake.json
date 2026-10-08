@@ -9,7 +9,7 @@
       "typeVersion": 1.2,
       "position": [
         -800,
-        -48
+        -32
       ],
       "id": "9ea46807-16af-41bd-a358-9d554421877e",
       "name": "When Executed by Another Workflow"
@@ -39,7 +39,7 @@
       "typeVersion": 3.5,
       "position": [
         -608,
-        -48
+        -32
       ],
       "id": "7254aac7-eb97-4f07-a3df-96b77d821b45",
       "name": "Register Investigation Intake"
@@ -288,8 +288,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        816,
-        -48
+        608,
+        -240
       ],
       "id": "74348dec-e513-48ca-b626-2be1a9ff6e88",
       "name": "Execution Succeeded?"
@@ -343,6 +343,302 @@
       "id": "f3a25368-70cc-42af-9103-4205eabe9585",
       "name": "Wait for Approval",
       "webhookId": "c049fe2e-458f-4a15-9a2c-73312a3ddd5a"
+    },
+    {
+      "parameters": {
+        "amount": 15
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        864,
+        -240
+      ],
+      "id": "5bfe5c98-471a-438f-afc3-6e4632a898f0",
+      "name": "Wait for Recovery",
+      "webhookId": "93c6a018-b368-4414-bb4c-241a09d11dee"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://127.0.0.1:8000/remediations/executions/' + $('Execute Approved Remediation').first().json.body.id + '/verify' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        864,
+        -32
+      ],
+      "id": "5b3d03c2-36e9-44b3-8d90-9c26c7332d06",
+      "name": "Verify Recovery",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "UotRPYodDTEGoeAW",
+          "name": "AegisOps Execution Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "9bc82238-5382-4b3d-b5ca-e0351dbd3151",
+              "leftValue": "={{ $json.body.status }}",
+              "rightValue": "RECOVERED",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1104,
+        -32
+      ],
+      "id": "f3e56201-d668-4a1f-b6d0-cf37847568e3",
+      "name": "Recovery Verified?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "0928c046-60e8-48cf-aaad-0ac3b27412c9",
+              "leftValue": "={{ $json.body.status === 'VERIFYING' && $json.body.should_retry === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1104,
+        -240
+      ],
+      "id": "e20c1af3-5654-46a5-9d9a-95222ed916ac",
+      "name": "Recovery Retry?"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.status }}",
+                    "rightValue": "NOT_RECOVERED",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "370bb0de-0702-4d04-bdc3-a344443dd774"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "NOT_RECOVERED"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "ed41b2a4-a5cc-488c-bce7-35e3e461f0a7",
+                    "leftValue": "={{ $json.body.status }}",
+                    "rightValue": "INCONCLUSIVE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "INCONCLUSIVE"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1328,
+        -144
+      ],
+      "id": "36093c83-a630-4481-8a03-3473281c1b9b",
+      "name": "Recovery Outcome"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4739da16-84f0-4e80-979c-290e6e80ce18",
+              "name": "outcome",
+              "value": "NOT_RECOVERED",
+              "type": "string"
+            },
+            {
+              "id": "8f9d6921-c3f3-445e-bf84-93b0f8c2b4f2",
+              "name": "message",
+              "value": "Remediation command succeeded, but the original incident condition did not recover.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1600,
+        -336
+      ],
+      "id": "1bf9ce73-69ff-4e46-8ea1-bbfcbdc1bd8b",
+      "name": "Recovery Not Confirmed"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c44a36fd-d6e3-4574-91cc-1cb552d2d0a6",
+              "name": "outcome",
+              "value": "INCONCLUSIVE",
+              "type": "string"
+            },
+            {
+              "id": "f09562c3-95e9-47db-a409-04d425b5cc9b",
+              "name": "message",
+              "value": "Recovery could not be determined because usable monitoring evidence was unavailable.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1600,
+        -128
+      ],
+      "id": "e099017b-d417-4180-a321-e8a6787f72f5",
+      "name": "Recovery Inconclusive"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "765d28be-8c0b-40d4-8dcf-02739fb39c16",
+              "name": "outcome",
+              "value": "VERIFICATION_ERROR",
+              "type": "string"
+            },
+            {
+              "id": "3dfe9f7b-f93b-4e97-b923-d5ee07a94f0a",
+              "name": "message",
+              "value": "Recovery verification failed or returned an unexpected response.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1600,
+        64
+      ],
+      "id": "49dde1a8-b88a-4377-b072-93d681a17f8b",
+      "name": "Recovery Verification Error"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6c75c5ca-081d-4c94-baa9-799b8dc57c30",
+              "name": "outcome",
+              "value": "RECOVERED",
+              "type": "string"
+            },
+            {
+              "id": "9ddc393f-10c6-4be5-b6a9-9fd2bcec9176",
+              "name": "message",
+              "value": "The original incident condition recovered and was confirmed by monitoring evidence.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1328,
+        48
+      ],
+      "id": "9f4aa242-97c6-439d-95d1-0ea040a16fe7",
+      "name": "Recovery Confirmed"
     }
   ],
   "pinData": {},
@@ -467,6 +763,100 @@
           }
         ]
       ]
+    },
+    "Execution Succeeded?": {
+      "main": [
+        [
+          {
+            "node": "Wait for Recovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Recovery": {
+      "main": [
+        [
+          {
+            "node": "Verify Recovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Recovery": {
+      "main": [
+        [
+          {
+            "node": "Recovery Verified?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recovery Verified?": {
+      "main": [
+        [
+          {
+            "node": "Recovery Confirmed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Recovery Retry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recovery Retry?": {
+      "main": [
+        [
+          {
+            "node": "Wait for Recovery",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Recovery Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recovery Outcome": {
+      "main": [
+        [
+          {
+            "node": "Recovery Not Confirmed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Recovery Inconclusive",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Recovery Verification Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -474,7 +864,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "ec5f7290-ae58-44c8-8d17-be611204a373",
+  "versionId": "31ba05ac-fb47-4057-a987-b3713407094b",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "a1b971ccd542966bf98edc508aa5ffb232b59afc6dd293657cfd10c7dda0468d"

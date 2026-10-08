@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
+from app.recovery import verify_recovery_attempt
 
 from app.core.config import settings
 from app.db.database import get_connection
@@ -1250,3 +1251,70 @@ def execute_approved_proposal(
         **execution,
         "reused": False,
     }
+
+@router.post(
+    "/executions/{execution_id}/verify"
+)
+def verify_remediation_recovery(
+    execution_id: int,
+    execution_key: str | None = Header(
+        default=None,
+        alias="X-AegisOps-Execution-Key",
+    ),
+):
+    expected_key = (
+        settings.remediation_execution_key
+    )
+
+    if (
+        not expected_key
+        or not execution_key
+        or not compare_digest(
+            execution_key,
+            expected_key,
+        )
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Invalid remediation execution "
+                "credentials."
+            ),
+        )
+
+    try:
+        return verify_recovery_attempt(
+            execution_id
+        )
+
+    except ValueError as exc:
+        message = str(exc)
+
+        if (
+            message
+            == "Remediation execution not found."
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail=message,
+            ) from exc
+
+        if (
+            message
+            == "Incident references an unknown rule."
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=message,
+            ) from exc
+
+        raise HTTPException(
+            status_code=409,
+            detail=message,
+        ) from exc
+
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
