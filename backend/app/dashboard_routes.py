@@ -13,6 +13,12 @@ from fastapi import (
     HTTPException,
     Query,
 )
+
+from app.postmortem import (
+    build_incident_timeline,
+    get_postmortem_by_incident,
+)
+
 from fastapi.security import HTTPBasicCredentials
 from psycopg.rows import dict_row
 
@@ -622,5 +628,306 @@ def get_dashboard_incidents(
             status_code=503,
             detail=(
                 "Incident data unavailable."
+            ),
+        ) from exc
+
+@router.get("/incidents/{incident_id}/detail")
+def get_dashboard_incident_detail(
+    incident_id: int,
+    _: HTTPBasicCredentials = Depends(
+        require_operator
+    ),
+):
+    try:
+        detail = build_incident_timeline(
+            incident_id
+        )
+
+        postmortem = (
+            get_postmortem_by_incident(
+                incident_id
+            )
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+
+    except psycopg.Error as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Incident detail data unavailable."
+            ),
+        ) from exc
+
+
+    return {
+        **detail,
+        "postmortem": postmortem,
+    }
+
+
+@router.get("/investigations")
+def get_dashboard_investigations(
+    limit: int = Query(
+        default=100,
+        ge=1,
+        le=500,
+    ),
+    _: HTTPBasicCredentials = Depends(
+        require_operator
+    ),
+):
+    try:
+        with get_connection() as conn:
+            with conn.cursor(
+                row_factory=dict_row
+            ) as cur:
+
+                cur.execute(
+                    """
+                    SELECT
+                        inv.id,
+                        inv.incident_id,
+                        inv.model,
+                        inv.evidence_collected_at,
+                        inv.report,
+                        inv.created_at,
+
+                        i.title
+                            AS incident_title,
+
+                        i.service
+                            AS incident_service,
+
+                        i.severity
+                            AS incident_severity,
+
+                        i.status
+                            AS incident_status
+
+                    FROM investigations AS inv
+
+                    JOIN incidents AS i
+                        ON i.id = inv.incident_id
+
+                    ORDER BY
+                        inv.created_at DESC,
+                        inv.id DESC
+
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+
+                investigations = (
+                    cur.fetchall()
+                )
+
+
+        return {
+            "investigations":
+                investigations,
+        }
+
+
+    except psycopg.Error as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Investigation data unavailable."
+            ),
+        ) from exc
+
+
+@router.get("/remediations")
+def get_dashboard_remediations(
+    limit: int = Query(
+        default=100,
+        ge=1,
+        le=500,
+    ),
+    _: HTTPBasicCredentials = Depends(
+        require_operator
+    ),
+):
+    try:
+        with get_connection() as conn:
+            with conn.cursor(
+                row_factory=dict_row
+            ) as cur:
+
+                cur.execute(
+                    """
+                    SELECT
+                        rp.id,
+                        rp.incident_id,
+                        rp.investigation_id,
+                        rp.action_key,
+                        rp.target_service,
+                        rp.rationale,
+                        rp.expected_outcome,
+                        rp.risk_level,
+                        rp.status,
+                        rp.created_at,
+                        rp.expires_at,
+                        rp.reviewed_by,
+                        rp.reviewed_at,
+                        rp.review_note,
+
+                        i.title
+                            AS incident_title,
+
+                        i.severity
+                            AS incident_severity,
+
+                        i.status
+                            AS incident_status,
+
+                        re.id
+                            AS execution_id,
+
+                        re.status
+                            AS execution_status,
+
+                        re.started_at
+                            AS execution_started_at,
+
+                        re.finished_at
+                            AS execution_finished_at,
+
+                        re.exit_code
+                            AS execution_exit_code,
+
+                        rv.id
+                            AS recovery_id,
+
+                        rv.status
+                            AS recovery_status,
+
+                        rv.attempt_count
+                            AS recovery_attempt_count,
+
+                        rv.verified_at
+                            AS recovery_verified_at
+
+                    FROM remediation_proposals AS rp
+
+                    JOIN incidents AS i
+                        ON i.id = rp.incident_id
+
+                    LEFT JOIN remediation_executions AS re
+                        ON re.proposal_id = rp.id
+
+                    LEFT JOIN recovery_verifications AS rv
+                        ON rv.execution_id = re.id
+
+                    ORDER BY
+                        rp.created_at DESC,
+                        rp.id DESC
+
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+
+                records = cur.fetchall()
+
+
+        return {
+            "remediations":
+                records,
+        }
+
+
+    except psycopg.Error as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Remediation data unavailable."
+            ),
+        ) from exc
+
+
+@router.get("/postmortems")
+def get_dashboard_postmortems(
+    limit: int = Query(
+        default=100,
+        ge=1,
+        le=500,
+    ),
+    _: HTTPBasicCredentials = Depends(
+        require_operator
+    ),
+):
+    try:
+        with get_connection() as conn:
+            with conn.cursor(
+                row_factory=dict_row
+            ) as cur:
+
+                cur.execute(
+                    """
+                    SELECT
+                        pm.id,
+                        pm.incident_id,
+                        pm.summary,
+                        pm.root_cause,
+                        pm.impact,
+                        pm.what_went_well,
+                        pm.what_went_wrong,
+                        pm.lessons_learned,
+                        pm.preventive_actions,
+                        pm.model,
+                        pm.created_at,
+                        pm.updated_at,
+
+                        i.title
+                            AS incident_title,
+
+                        i.service
+                            AS incident_service,
+
+                        i.severity
+                            AS incident_severity,
+
+                        i.status
+                            AS incident_status,
+
+                        i.resolved_at
+
+                    FROM incident_postmortems AS pm
+
+                    JOIN incidents AS i
+                        ON i.id = pm.incident_id
+
+                    ORDER BY
+                        pm.created_at DESC,
+                        pm.id DESC
+
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+
+                postmortems = (
+                    cur.fetchall()
+                )
+
+
+        return {
+            "postmortems":
+                postmortems,
+        }
+
+
+    except psycopg.Error as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Postmortem data unavailable."
             ),
         ) from exc

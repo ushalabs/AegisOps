@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import {
   AlertTriangle,
   CheckCircle2,
@@ -37,298 +39,363 @@ export default async function IncidentsPage() {
   return (
     <main
       className="
-        min-h-[calc(100vh-70px)]
-        p-6 xl:p-8
+        min-h-[calc(100vh-82px)]
+        p-6
+        xl:p-8
       "
     >
 
       <div
         className="
-          mb-6
-          flex
-          flex-col
-          justify-between
-          gap-4
-          md:flex-row
-          md:items-end
+          mx-auto
+          w-full
+          max-w-[1700px]
         "
       >
 
-        <div>
-
-          <h1
-            className="
-              text-3xl
-              font-bold
-              tracking-tight
-            "
-          >
-            Incidents
-          </h1>
-
-          <p
-            className="
-              mt-1
-              text-sm
-              text-slate-500
-            "
-          >
-            Detected incidents
-            across monitored
-            AegisOps services.
-          </p>
-
-        </div>
-
+        {/* PAGE HEADER */}
 
         <div
           className="
-            flex gap-3
+            mb-6
+            flex
+            flex-col
+            justify-between
+            gap-5
+            md:flex-row
+            md:items-end
           "
         >
 
-          <div
-            className="
-              rounded-xl
-              border
-              border-red-100
-              bg-red-50
-              px-4 py-3
-            "
-          >
+          <div>
 
-            <p
+            <h1
               className="
-                text-xs
-                font-medium
-                text-red-600
+                text-[32px]
+                font-bold
+                tracking-[-0.035em]
+                text-slate-950
               "
             >
-              Open
-            </p>
+              Incidents
+            </h1>
+
 
             <p
               className="
                 mt-1
-                text-xl
-                font-bold
-                text-slate-900
+                text-sm
+                text-slate-600
               "
             >
-              {openCount}
+              Detected incidents across monitored AegisOps services.
             </p>
 
           </div>
 
 
+          {/* COUNTERS */}
+
           <div
             className="
-              rounded-xl
-              border
-              border-emerald-100
-              bg-emerald-50
-              px-4 py-3
+              flex
+              gap-3
             "
           >
 
-            <p
-              className="
-                text-xs
-                font-medium
-                text-emerald-600
-              "
-            >
-              Resolved
-            </p>
+            <SummaryCard
+              label="Open"
+              value={openCount}
+              tone="red"
+            />
 
-            <p
-              className="
-                mt-1
-                text-xl
-                font-bold
-                text-slate-900
-              "
-            >
-              {resolvedCount}
-            </p>
+
+            <SummaryCard
+              label="Resolved"
+              value={resolvedCount}
+              tone="green"
+            />
 
           </div>
 
         </div>
 
-      </div>
 
+        {/* INCIDENT HISTORY */}
 
-      <section
-        className="
-          overflow-hidden
-          rounded-2xl
-          border
-          border-slate-200
-          bg-white
-          shadow-sm
-        "
-      >
-
-        <div
+        <section
           className="
-            border-b
-            border-slate-100
-            px-6 py-5
+            overflow-hidden
+            rounded-[30px]
+            border
+            border-white/30
           "
+          style={{
+            background:
+              `
+                linear-gradient(
+                  135deg,
+                  rgba(255,255,255,0.20),
+                  rgba(255,255,255,0.09)
+                )
+              `,
+
+            backdropFilter:
+              "blur(22px)",
+
+            WebkitBackdropFilter:
+              "blur(22px)",
+
+            boxShadow:
+              `
+                inset 0 1px 0 rgba(255,255,255,0.34),
+                0 20px 60px rgba(53,42,76,0.08)
+              `,
+          }}
         >
 
-          <h2 className="font-semibold">
-            Incident History
-          </h2>
-
-          <p
-            className="
-              mt-1
-              text-xs
-              text-slate-500
-            "
-          >
-            {incidents.length}
-            {" "}
-            incidents loaded
-          </p>
-
-        </div>
-
-
-        {incidents.length === 0 ? (
+          {/* SECTION HEADER */}
 
           <div
             className="
-              flex h-64
+              flex
               items-center
-              justify-center
+              justify-between
+              border-b
+              border-white/22
+              px-6
+              py-5
             "
           >
 
-            <div className="text-center">
+            <div>
 
-              <CheckCircle2
+              <h2
                 className="
-                  mx-auto
-                  h-10 w-10
-                  text-emerald-400
+                  text-lg
+                  font-semibold
+                  tracking-[-0.015em]
+                  text-slate-950
                 "
-              />
+              >
+                Incident History
+              </h2>
+
 
               <p
                 className="
-                  mt-3
-                  text-sm
-                  font-medium
-                  text-slate-700
+                  mt-1
+                  text-xs
+                  text-slate-600
                 "
               >
-                No incidents found
+                {incidents.length} incidents loaded
               </p>
+
+            </div>
+
+
+            <div
+              className="
+                hidden
+                items-center
+                gap-2
+                rounded-full
+                border
+                border-white/25
+                bg-white/15
+                px-3
+                py-1.5
+                text-[11px]
+                font-medium
+                text-slate-600
+                backdrop-blur-xl
+                sm:flex
+              "
+            >
+
+              <span
+                className="
+                  h-2
+                  w-2
+                  rounded-full
+                  bg-emerald-500
+                "
+              />
+
+              Live incident records
 
             </div>
 
           </div>
 
-        ) : (
 
-          <div className="overflow-x-auto">
+          {incidents.length === 0 ? (
 
-            <table
+            <div
               className="
-                w-full
-                text-left
-                text-sm
+                flex
+                min-h-[360px]
+                items-center
+                justify-center
+                px-6
               "
             >
 
-              <thead
+              <div className="text-center">
+
+                <div
+                  className="
+                    mx-auto
+                    flex
+                    h-16
+                    w-16
+                    items-center
+                    justify-center
+                    rounded-[22px]
+                    border
+                    border-emerald-200/35
+                    bg-emerald-100/40
+                    backdrop-blur-xl
+                  "
+                >
+
+                  <CheckCircle2
+                    className="
+                      h-8
+                      w-8
+                      text-emerald-600
+                    "
+                  />
+
+                </div>
+
+
+                <p
+                  className="
+                    mt-4
+                    text-base
+                    font-semibold
+                    text-slate-800
+                  "
+                >
+                  No incidents found
+                </p>
+
+              </div>
+
+            </div>
+
+          ) : (
+
+            <div
+              className="
+                overflow-x-auto
+                px-4
+                pb-4
+                pt-3
+              "
+            >
+
+              <div
                 className="
-                  border-b
-                  border-slate-100
-                  bg-slate-50/70
-                  text-xs
-                  uppercase
-                  tracking-wide
-                  text-slate-500
+                  min-w-[1250px]
                 "
               >
 
-                <tr>
+                {/* COLUMN HEADINGS */}
 
-                  <th className="px-6 py-4">
-                    ID
-                  </th>
+                <div
+                  className="
+                    grid
+                    grid-cols-[70px_minmax(300px,1.8fr)_minmax(170px,0.9fr)_100px_120px_170px_170px]
+                    items-center
+                    gap-4
+                    px-4
+                    py-3
+                    text-[11px]
+                    font-semibold
+                    uppercase
+                    tracking-[0.06em]
+                    text-slate-500
+                  "
+                >
 
-                  <th className="px-6 py-4">
-                    Incident
-                  </th>
+                  <div>ID</div>
+                  <div>Incident</div>
+                  <div>Service</div>
+                  <div>Severity</div>
+                  <div>Status</div>
+                  <div>Detected</div>
+                  <div>Resolved</div>
 
-                  <th className="px-6 py-4">
-                    Service
-                  </th>
-
-                  <th className="px-6 py-4">
-                    Severity
-                  </th>
-
-                  <th className="px-6 py-4">
-                    Status
-                  </th>
-
-                  <th className="px-6 py-4">
-                    Detected
-                  </th>
-
-                  <th className="px-6 py-4">
-                    Resolved
-                  </th>
-
-                </tr>
-
-              </thead>
+                </div>
 
 
-              <tbody
-                className="
-                  divide-y
-                  divide-slate-100
-                "
-              >
+                {/* INCIDENT RECORDS */}
 
-                {incidents.map(
-                  (incident) => (
+                <div className="space-y-2">
 
-                    <tr
-                      key={
-                        incident.id
-                      }
-                      className="
-                        transition
-                        hover:bg-slate-50
-                      "
-                    >
+                  {incidents.map(
+                    (incident) => (
 
-                      <td
+                      <Link
+                        key={incident.id}
+                        href={`/incidents/${incident.id}`}
                         className="
-                          whitespace-nowrap
-                          px-6 py-4
-                          font-medium
-                          text-slate-500
+                          group
+                          grid
+                          cursor-pointer
+                          grid-cols-[70px_minmax(300px,1.8fr)_minmax(170px,0.9fr)_100px_120px_170px_170px]
+                          items-center
+                          gap-4
+                          rounded-[20px]
+                          border
+                          border-white/22
+                          px-4
+                          py-3.5
+                          transition
+                          duration-200
+                          hover:-translate-y-[1px]
+                          hover:border-white/40
+                          hover:bg-white/18
+                          hover:shadow-[0_10px_26px_rgba(53,42,76,0.06)]
+                          focus:outline-none
+                          focus:ring-2
+                          focus:ring-indigo-300/50
                         "
+                        style={{
+                          background:
+                            "rgba(255,255,255,0.11)",
+
+                          backdropFilter:
+                            "blur(14px)",
+
+                          WebkitBackdropFilter:
+                            "blur(14px)",
+                        }}
                       >
-                        #
-                        {incident.id}
-                      </td>
+
+                        {/* ID */}
+
+                        <div
+                          className="
+                            whitespace-nowrap
+                            text-sm
+                            font-medium
+                            text-slate-600
+                          "
+                        >
+                          #{incident.id}
+                        </div>
 
 
-                      <td className="px-6 py-4">
+                        {/* INCIDENT */}
 
                         <div
                           className="
                             flex
+                            min-w-0
                             items-center
                             gap-3
                           "
@@ -337,26 +404,40 @@ export default async function IncidentsPage() {
                           <div
                             className="
                               flex
-                              h-9 w-9
+                              h-10
+                              w-10
                               shrink-0
                               items-center
                               justify-center
-                              rounded-lg
-                              bg-red-50
+                              rounded-[14px]
+                              border
+                              border-red-200/30
+                              bg-red-100/42
+                              transition
+                              duration-200
+                              group-hover:bg-red-100/60
                             "
                           >
+
                             <AlertTriangle
                               className="
-                                h-4 w-4
+                                h-[17px]
+                                w-[17px]
                                 text-red-600
                               "
                             />
+
                           </div>
+
 
                           <span
                             className="
+                              truncate
+                              text-sm
                               font-semibold
-                              text-slate-900
+                              text-slate-950
+                              transition
+                              group-hover:text-indigo-950
                             "
                           >
                             {incident.title}
@@ -364,85 +445,210 @@ export default async function IncidentsPage() {
 
                         </div>
 
-                      </td>
+
+                        {/* SERVICE */}
+
+                        <div
+                          className="
+                            truncate
+                            text-sm
+                            text-slate-700
+                          "
+                          title={incident.service}
+                        >
+                          {incident.service}
+                        </div>
 
 
-                      <td
-                        className="
-                          whitespace-nowrap
-                          px-6 py-4
-                          text-slate-600
-                        "
-                      >
-                        {incident.service}
-                      </td>
+                        {/* SEVERITY */}
+
+                        <div>
+
+                          <SeverityBadge
+                            severity={
+                              incident.severity
+                            }
+                          />
+
+                        </div>
 
 
-                      <td className="px-6 py-4">
+                        {/* STATUS */}
 
-                        <SeverityBadge
-                          severity={
-                            incident.severity
-                          }
-                        />
+                        <div>
 
-                      </td>
+                          <StatusBadge
+                            status={
+                              incident.status
+                            }
+                          />
 
-
-                      <td className="px-6 py-4">
-
-                        <StatusBadge
-                          status={
-                            incident.status
-                          }
-                        />
-
-                      </td>
+                        </div>
 
 
-                      <td
-                        className="
-                          whitespace-nowrap
-                          px-6 py-4
-                          text-slate-500
-                        "
-                      >
-                        {formatDate(
-                          incident.first_detected_at
-                        )}
-                      </td>
+                        {/* DETECTED */}
+
+                        <div
+                          className="
+                            whitespace-nowrap
+                            text-sm
+                            text-slate-600
+                          "
+                        >
+                          {formatDate(
+                            incident.first_detected_at
+                          )}
+                        </div>
 
 
-                      <td
-                        className="
-                          whitespace-nowrap
-                          px-6 py-4
-                          text-slate-500
-                        "
-                      >
-                        {formatDate(
-                          incident.resolved_at
-                        )}
-                      </td>
+                        {/* RESOLVED */}
 
-                    </tr>
+                        <div
+                          className="
+                            whitespace-nowrap
+                            text-sm
+                            text-slate-600
+                          "
+                        >
+                          {formatDate(
+                            incident.resolved_at
+                          )}
+                        </div>
 
-                  )
-                )}
+                      </Link>
 
-              </tbody>
+                    )
+                  )}
 
-            </table>
+                </div>
 
-          </div>
+              </div>
 
-        )}
+            </div>
 
-      </section>
+          )}
+
+        </section>
+
+      </div>
 
     </main>
   );
 }
+
+
+/* ========================================================= */
+/* SUMMARY CARDS                                             */
+/* ========================================================= */
+
+
+function SummaryCard({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "red" | "green";
+}) {
+  const styles =
+    tone === "red"
+      ? {
+          border:
+            "border-red-200/40",
+
+          background:
+            "rgba(254,226,226,0.32)",
+
+          label:
+            "text-red-700",
+
+          dot:
+            "bg-red-500",
+        }
+
+      : {
+          border:
+            "border-emerald-200/40",
+
+          background:
+            "rgba(209,250,229,0.32)",
+
+          label:
+            "text-emerald-700",
+
+          dot:
+            "bg-emerald-500",
+        };
+
+
+  return (
+    <div
+      className={`
+        min-w-[92px]
+        rounded-[18px]
+        border
+        px-4
+        py-3
+        backdrop-blur-xl
+        ${styles.border}
+      `}
+      style={{
+        background:
+          styles.background,
+
+        boxShadow:
+          `
+            inset 0 1px 0 rgba(255,255,255,0.28),
+            0 8px 22px rgba(53,42,76,0.04)
+          `,
+      }}
+    >
+
+      <p
+        className={`
+          flex
+          items-center
+          gap-1.5
+          text-[11px]
+          font-semibold
+          ${styles.label}
+        `}
+      >
+
+        <span
+          className={`
+            h-1.5
+            w-1.5
+            rounded-full
+            ${styles.dot}
+          `}
+        />
+
+        {label}
+
+      </p>
+
+
+      <p
+        className="
+          mt-1
+          text-xl
+          font-bold
+          text-slate-950
+        "
+      >
+        {value}
+      </p>
+
+    </div>
+  );
+}
+
+
+/* ========================================================= */
+/* SEVERITY                                                  */
+/* ========================================================= */
 
 
 function SeverityBadge({
@@ -455,28 +661,45 @@ function SeverityBadge({
 
 
   const style =
-    normalized ===
-    "CRITICAL"
-      ? "bg-red-100 text-red-700"
+    normalized === "CRITICAL"
+      ? (
+        "border-red-300/45 "
+        + "bg-red-100/50 "
+        + "text-red-800"
+      )
 
-      : normalized ===
-        "HIGH"
-        ? "bg-red-50 text-red-700"
+      : normalized === "HIGH"
+        ? (
+          "border-red-200/40 "
+          + "bg-red-100/38 "
+          + "text-red-700"
+        )
 
-        : normalized ===
-          "MEDIUM"
-          ? "bg-amber-50 text-amber-700"
+        : normalized === "MEDIUM"
+          ? (
+            "border-amber-200/45 "
+            + "bg-amber-100/42 "
+            + "text-amber-700"
+          )
 
-          : "bg-blue-50 text-blue-700";
+          : (
+            "border-blue-200/40 "
+            + "bg-blue-100/40 "
+            + "text-blue-700"
+          );
 
 
   return (
     <span
       className={`
+        inline-flex
         rounded-full
-        px-2.5 py-1
-        text-xs
+        border
+        px-2.5
+        py-1
+        text-[10px]
         font-semibold
+        backdrop-blur-lg
         ${style}
       `}
     >
@@ -484,6 +707,11 @@ function SeverityBadge({
     </span>
   );
 }
+
+
+/* ========================================================= */
+/* STATUS                                                    */
+/* ========================================================= */
 
 
 function StatusBadge({
@@ -497,22 +725,37 @@ function StatusBadge({
 
   const style =
     normalized === "OPEN"
-      ? "bg-red-50 text-red-700"
+      ? (
+        "border-red-200/40 "
+        + "bg-red-100/40 "
+        + "text-red-700"
+      )
 
-      : normalized ===
-        "RESOLVED"
-        ? "bg-emerald-50 text-emerald-700"
+      : normalized === "RESOLVED"
+        ? (
+          "border-emerald-200/40 "
+          + "bg-emerald-100/40 "
+          + "text-emerald-700"
+        )
 
-        : "bg-blue-50 text-blue-700";
+        : (
+          "border-blue-200/40 "
+          + "bg-blue-100/40 "
+          + "text-blue-700"
+        );
 
 
   return (
     <span
       className={`
+        inline-flex
         rounded-full
-        px-2.5 py-1
-        text-xs
+        border
+        px-2.5
+        py-1
+        text-[10px]
         font-semibold
+        backdrop-blur-lg
         ${style}
       `}
     >
@@ -520,6 +763,11 @@ function StatusBadge({
     </span>
   );
 }
+
+
+/* ========================================================= */
+/* DATE                                                      */
+/* ========================================================= */
 
 
 function formatDate(
