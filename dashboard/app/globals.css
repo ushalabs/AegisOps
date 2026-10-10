@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+:root {
+  --ink: #111625;
+  --muted: #70747d;
+  --canvas: #f3f0eb;
+  --panel: #faf8f4;
+  --rail: #0f1424;
+  --coral: #ff765f;
+  --pink: #ef4e91;
+  --mint: #55cfa0;
+  --amber: #f2b84b;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -8,78 +20,70 @@ html,
 body {
   margin: 0;
   min-height: 100%;
+  width: 100%;
+}
+
+html {
+  background: var(--canvas);
 }
 
 body {
-  background: #f5f8fc;
+  min-height: 100vh;
+  color: var(--ink);
+  background: var(--canvas);
   font-family: Arial, Helvetica, sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  overflow-x: hidden;
 }
 
-html,
-body {
-  min-height: 100%;
+/* Keep the whole product visually lighter and less over-bold. */
+.font-black,
+.font-bold,
+.font-semibold {
+  font-weight: 500 !important;
 }
 
-body {
-  color: #111827;
-  background:
-    radial-gradient(circle at 12% 18%, rgba(244, 114, 182, 0.16), transparent 24%),
-    radial-gradient(circle at 52% 16%, rgba(139, 92, 246, 0.18), transparent 26%),
-    radial-gradient(circle at 84% 72%, rgba(56, 189, 248, 0.16), transparent 26%),
-    linear-gradient(135deg, #cec8d8 0%, #cfc9da 22%, #c9c1d9 48%, #c6c0d6 72%, #cdd6df 100%);
-  background-attachment: fixed;
+::selection {
+  background: rgba(239, 78, 145, 0.18);
 }
 
-* {
-  box-sizing: border-box;
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
 }
 
-.site-bg-overlay {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: -1;
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.16) 0%,
-      rgba(255, 255, 255, 0.06) 100%
-    );
+.aegis-frame {
+  min-height: 100vh;
+  width: 100%;
+  margin: 0;
+  overflow: visible;
+  border-radius: 0;
+  background: var(--canvas);
+  box-shadow: none;
 }
 
-.glass-panel {
-  background: rgba(255, 255, 255, 0.28);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  box-shadow:
-    0 10px 30px rgba(78, 55, 122, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+.aegis-card {
+  border: 1px solid rgba(17, 22, 37, 0.035);
+  background: rgba(251, 249, 245, 0.98);
+  box-shadow: 0 12px 32px rgba(31, 37, 56, 0.035);
 }
 
-.glass-card {
-  background: rgba(255, 255, 255, 0.24);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  box-shadow:
-    0 8px 24px rgba(78, 55, 122, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+.aegis-soft {
+  border: 1px solid rgba(17, 22, 37, 0.04);
+  background: rgba(255, 255, 255, 0.64);
 }
 
-.glass-soft {
-  background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.24);
+.aegis-scrollbar::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
 }
 
-.glass-input {
-  background: rgba(255, 255, 255, 0.22);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  box-shadow:
-    0 6px 18px rgba(78, 55, 122, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+.aegis-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbc7c0;
+  border-radius: 999px;
+}
+
+.aegis-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
 }

@@ -1,2115 +1,563 @@
-import type {
-  ComponentType,
-  ReactNode,
-} from "react";
-
+import type { ComponentType } from "react";
 import Link from "next/link";
-
 import {
   Activity,
   AlertTriangle,
-  BookOpen,
+  ArrowUpRight,
   CheckCircle2,
-  Clock3,
-  Server,
+  CircleDot,
+  FileText,
+  ShieldCheck,
   Wrench,
 } from "lucide-react";
-
-import {
-  SiGrafana,
-  SiPostgresql,
-  SiPrometheus,
-  SiRedis,
-} from "react-icons/si";
-
-import TimeRangeSelector, {
-  type TimeRange,
-} from "../components/time-range-selector";
-
+import { SiGrafana, SiPostgresql, SiPrometheus, SiRedis } from "react-icons/si";
+import TimeRangeSelector, { type TimeRange } from "@/components/time-range-selector";
+import { Panel, StatusBadge } from "@/components/ui";
 import {
   getDashboardIncidents,
   getDashboardOverview,
   type DashboardIncident,
   type DashboardServiceHealth,
-} from "../lib/aegisops";
-
+} from "@/lib/aegisops";
 
 export const instant = false;
 
+type DashboardIcon = ComponentType<{ className?: string }>;
+type TrendPoint = { label: string; detected: number; resolved: number };
 
-type DashboardIcon = ComponentType<{
-  className?: string;
-}>;
-
-
-type TrendPoint = {
-  label: string;
-  detected: number;
-  resolved: number;
-};
-
-
-const rangeHours: Record<
-  TimeRange,
-  number
-> = {
+const rangeHours: Record<TimeRange, number> = {
   "1h": 1,
   "6h": 6,
   "24h": 24,
   "7d": 168,
 };
 
-
-const serviceVisuals = {
+const serviceVisuals: Record<
+  string,
+  { icon: DashboardIcon; color: string; background: string }
+> = {
   "benchmark-api": {
-    icon: Server,
-    color: "text-indigo-600",
-    background: "bg-indigo-100/60",
+    icon: Activity,
+    color: "text-[#6674ef]",
+    background: "bg-[#edf0ff]",
   },
-
   postgresql: {
     icon: SiPostgresql,
     color: "text-[#336791]",
-    background: "bg-sky-100/60",
+    background: "bg-[#e8f4fb]",
   },
-
   redis: {
     icon: SiRedis,
-    color: "text-[#DC382D]",
-    background: "bg-red-100/60",
+    color: "text-[#d74b3f]",
+    background: "bg-[#fff0ec]",
   },
-
   prometheus: {
     icon: SiPrometheus,
-    color: "text-[#E6522C]",
-    background: "bg-orange-100/60",
+    color: "text-[#e6522c]",
+    background: "bg-[#fff1e7]",
   },
-
   grafana: {
     icon: SiGrafana,
-    color: "text-[#F46800]",
-    background: "bg-amber-100/60",
+    color: "text-[#f46800]",
+    background: "bg-[#fff4dd]",
   },
-
   cadvisor: {
     icon: Activity,
-    color: "text-cyan-600",
-    background: "bg-cyan-100/60",
+    color: "text-[#1596a7]",
+    background: "bg-[#e9f8f7]",
   },
 };
-
-
-const fallbackServiceVisual = {
-  icon: Activity,
-  color: "text-indigo-600",
-  background: "bg-indigo-100/60",
-};
-
 
 export default async function Dashboard({
   searchParams,
 }: {
-  searchParams: Promise<{
-    range?: string;
-  }>;
+  searchParams: Promise<{ range?: string }>;
 }) {
-  const params =
-    await searchParams;
-
+  const params = await searchParams;
 
   const selectedRange: TimeRange =
-    params.range === "1h" ||
-    params.range === "6h" ||
-    params.range === "7d"
+    params.range === "1h" || params.range === "6h" || params.range === "7d"
       ? params.range
       : "24h";
 
-
-  const [
-    overview,
-    incidents,
-  ] = await Promise.all([
-    getDashboardOverview(
-      rangeHours[selectedRange]
-    ),
-
+  const [overview, incidents] = await Promise.all([
+    getDashboardOverview(rangeHours[selectedRange]),
     getDashboardIncidents(500),
   ]);
 
-
-  const trend =
-    buildTrendData(
-      incidents,
-      selectedRange
-    );
-
-
-  const allSystemsHealthy =
-    overview.services.length > 0 &&
-    overview.services.every(
-      (service) =>
-        service.status ===
-        "HEALTHY"
-    );
-
-
-  const hasUnhealthyService =
-    overview.services.some(
-      (service) =>
-        service.status ===
-        "UNHEALTHY"
-    );
-
-
-  const operations = [
-    {
-      label: "Open Incidents",
-      value:
-        overview.counts
-          .open_incidents,
-      note: "Currently active",
-      icon: AlertTriangle,
-      tone: "rose" as const,
-    },
-
-    {
-      label: "Investigating",
-      value:
-        overview.counts
-          .investigating,
-      note: "Agent investigations",
-      icon: Clock3,
-      tone: "amber" as const,
-    },
-
-    {
-      label: "Pending Approval",
-      value:
-        overview.counts
-          .pending_approval,
-      note:
-        "Awaiting operator review",
-      icon: Wrench,
-      tone: "indigo" as const,
-    },
-
-    {
-      label: "Recovered",
-      value:
-        overview.counts
-          .recovered,
-      note: "Verified recoveries",
-      icon: CheckCircle2,
-      tone: "emerald" as const,
-    },
-
-    {
-      label: "Postmortems",
-      value:
-        overview.counts
-          .postmortems,
-      note:
-        "Stored incident memories",
-      icon: BookOpen,
-      tone: "violet" as const,
-    },
-  ];
-
-
-  return (
-    <div
-      className="
-        mx-auto
-        w-full
-        max-w-[1700px]
-        space-y-5
-      "
-    >
-
-      {/* ================================================= */}
-      {/* SYSTEM OVERVIEW                                   */}
-      {/* ================================================= */}
-
-      <GlassCard>
-
-        <div
-          className="
-            flex
-            flex-col
-            justify-between
-            gap-4
-            border-b
-            border-white/25
-            px-6
-            py-5
-            sm:flex-row
-            sm:items-center
-          "
-        >
-
-          <div
-            className="
-              flex
-              items-center
-              gap-4
-            "
-          >
-
-            <div
-              className="
-                flex
-                h-12
-                w-12
-                shrink-0
-                items-center
-                justify-center
-                rounded-[17px]
-                bg-gradient-to-br
-                from-violet-500
-                to-indigo-600
-                shadow-[0_12px_28px_rgba(99,102,241,0.22)]
-              "
-            >
-              <Activity
-                className="
-                  h-6
-                  w-6
-                  text-white
-                "
-              />
-            </div>
-
-
-            <div>
-
-              <h1
-                className="
-                  text-[22px]
-                  font-semibold
-                  tracking-[-0.025em]
-                  text-slate-950
-                "
-              >
-                System Overview
-              </h1>
-
-
-              <p
-                className="
-                  mt-1
-                  text-xs
-                  text-slate-600
-                "
-              >
-                Real-time infrastructure health
-              </p>
-
-            </div>
-
-          </div>
-
-
-          <SystemHealthBadge
-            allHealthy={
-              allSystemsHealthy
-            }
-            hasUnhealthy={
-              hasUnhealthyService
-            }
-          />
-
-        </div>
-
-
-        <div
-          className="
-            grid
-            gap-4
-            px-5
-            pb-5
-            pt-4
-            sm:grid-cols-2
-            lg:grid-cols-3
-            xl:grid-cols-6
-          "
-        >
-
-          {overview.services.map(
-            (service) => {
-              const visual =
-                serviceVisuals[
-                  service.key as keyof typeof serviceVisuals
-                ] ??
-                fallbackServiceVisual;
-
-
-              return (
-                <ServiceCard
-                  key={service.key}
-                  service={service}
-                  icon={visual.icon}
-                  iconColor={
-                    visual.color
-                  }
-                  iconBackground={
-                    visual.background
-                  }
-                />
-              );
-            }
-          )}
-
-        </div>
-
-      </GlassCard>
-
-
-      {/* ================================================= */}
-      {/* INCIDENT ACTIVITY + OPERATIONS                    */}
-      {/* ================================================= */}
-
-      <section
-        className="
-          grid
-          gap-5
-          xl:grid-cols-[minmax(0,1fr)_360px]
-          xl:items-stretch
-        "
-      >
-
-        {/* INCIDENT ACTIVITY */}
-
-        <GlassCard
-          className="
-            flex
-            min-h-[520px]
-            flex-col
-          "
-        >
-
-          <div
-            className="
-              flex
-              flex-col
-              justify-between
-              gap-4
-              border-b
-              border-white/25
-              px-6
-              pb-4
-              pt-5
-              sm:flex-row
-              sm:items-start
-            "
-          >
-
-            <div>
-
-              <h2
-                className="
-                  text-[22px]
-                  font-semibold
-                  tracking-[-0.025em]
-                  text-slate-950
-                "
-              >
-                Incident Activity
-              </h2>
-
-
-              <p
-                className="
-                  mt-1
-                  text-xs
-                  text-slate-600
-                "
-              >
-                Detected and resolved incidents
-              </p>
-
-            </div>
-
-
-            <div
-              className="
-                flex
-                items-center
-                gap-4
-                text-[11px]
-                font-medium
-                text-slate-700
-              "
-            >
-
-              <span
-                className="
-                  flex
-                  items-center
-                  gap-1.5
-                "
-              >
-                <span
-                  className="
-                    h-2.5
-                    w-2.5
-                    rounded-full
-                    bg-indigo-500
-                  "
-                />
-
-                Detected
-              </span>
-
-
-              <span
-                className="
-                  flex
-                  items-center
-                  gap-1.5
-                "
-              >
-                <span
-                  className="
-                    h-2.5
-                    w-2.5
-                    rounded-full
-                    bg-emerald-400
-                  "
-                />
-
-                Resolved
-              </span>
-
-            </div>
-
-          </div>
-
-
-          <div className="flex-1">
-
-            <IncidentChart
-              data={trend}
-            />
-
-          </div>
-
-        </GlassCard>
-
-
-        {/* OPERATIONS */}
-
-        <GlassCard
-          className="
-            flex
-            h-full
-            flex-col
-          "
-        >
-
-          <div
-            className="
-              border-b
-              border-white/25
-              px-5
-              py-5
-            "
-          >
-
-            <div>
-
-              <h2
-                className="
-                  text-[22px]
-                  font-semibold
-                  tracking-[-0.025em]
-                  text-slate-950
-                "
-              >
-                Operations
-              </h2>
-
-
-              <p
-                className="
-                  mt-1
-                  text-xs
-                  text-slate-600
-                "
-              >
-                Incident operations
-              </p>
-
-            </div>
-
-
-            <div className="mt-4">
-
-              <TimeRangeSelector
-                value={
-                  selectedRange
-                }
-              />
-
-            </div>
-
-          </div>
-
-
-          <div
-            className="
-              flex
-              flex-1
-              flex-col
-              justify-between
-              gap-3
-              p-4
-            "
-          >
-
-            {operations.map(
-              (operation) => (
-                <OperationRow
-                  key={
-                    operation.label
-                  }
-                  {...operation}
-                />
-              )
-            )}
-
-          </div>
-
-        </GlassCard>
-
-      </section>
-
-
-      {/* ================================================= */}
-      {/* LOWER PANELS                                      */}
-      {/* ================================================= */}
-
-      <section
-        className="
-          grid
-          gap-5
-          xl:grid-cols-2
-        "
-      >
-
-        <Panel
-          title="Active Incidents"
-          href="/incidents"
-          action="View all"
-        >
-
-          <ActiveIncidents
-            incidents={
-              overview.active_incidents
-            }
-          />
-
-        </Panel>
-
-
-        <Panel
-          title="Recent Activity"
-          href="/incidents"
-          action="View all"
-        >
-
-          <RecentActivity
-            incidents={
-              overview.recent_incidents
-            }
-          />
-
-        </Panel>
-
-      </section>
-
-    </div>
+  const trend = buildTrendData(incidents, selectedRange);
+  const healthyServices = overview.services.filter(
+    (service) => service.status === "HEALTHY"
+  ).length;
+  const closedIncidents = Math.max(
+    0,
+    overview.counts.total_incidents - overview.counts.open_incidents
   );
-}
-
-
-/* ========================================================= */
-/* GLASS CARD                                                */
-/* ========================================================= */
-
-
-function GlassCard({
-  children,
-  className = "",
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <section
-      className={[
-        `
-          overflow-hidden
-          rounded-[28px]
-          border
-          border-white/30
-        `,
-        className,
-      ].join(" ")}
-      style={{
-        background:
-          `
-            linear-gradient(
-              135deg,
-              rgba(255,255,255,0.22),
-              rgba(255,255,255,0.10)
-            )
-          `,
-
-        backdropFilter:
-          "blur(22px)",
-
-        WebkitBackdropFilter:
-          "blur(22px)",
-
-        boxShadow:
-          `
-            inset 0 1px 0 rgba(255,255,255,0.38),
-            0 18px 55px rgba(53,42,76,0.08)
-          `,
-      }}
-    >
-      {children}
-    </section>
-  );
-}
-
-
-/* ========================================================= */
-/* SYSTEM STATUS                                             */
-/* ========================================================= */
-
-
-function SystemHealthBadge({
-  allHealthy,
-  hasUnhealthy,
-}: {
-  allHealthy: boolean;
-  hasUnhealthy: boolean;
-}) {
-  const style =
-    allHealthy
-      ? (
-        "border-emerald-300/60 "
-        + "bg-emerald-100/55 "
-        + "text-emerald-800"
-      )
-      : hasUnhealthy
-        ? (
-          "border-red-300/60 "
-          + "bg-red-100/55 "
-          + "text-red-800"
-        )
-        : (
-          "border-amber-300/60 "
-          + "bg-amber-100/55 "
-          + "text-amber-800"
-        );
-
-
-  const dot =
-    allHealthy
-      ? "bg-emerald-500"
-      : hasUnhealthy
-        ? "bg-red-500"
-        : "bg-amber-500";
-
-
-  const text =
-    allHealthy
-      ? "All Systems Healthy"
-      : hasUnhealthy
-        ? "Issues Detected"
-        : "Degraded";
-
-
-  return (
-    <span
-      className={`
-        inline-flex
-        items-center
-        gap-2
-        rounded-full
-        border
-        px-3.5
-        py-1.5
-        text-[11px]
-        font-semibold
-        backdrop-blur-xl
-        ${style}
-      `}
-    >
-
-      <span
-        className={`
-          h-2
-          w-2
-          rounded-full
-          ${dot}
-        `}
-      />
-
-      {text}
-
-    </span>
-  );
-}
-
-
-/* ========================================================= */
-/* SERVICE CARD                                              */
-/* ========================================================= */
-
-
-function ServiceCard({
-  service,
-  icon: Icon,
-  iconColor,
-  iconBackground,
-}: {
-  service: DashboardServiceHealth;
-  icon: DashboardIcon;
-  iconColor: string;
-  iconBackground: string;
-}) {
-  const healthy =
-    service.status ===
-    "HEALTHY";
-
-
-  const degraded =
-    service.status ===
-    "DEGRADED";
-
-
-  const statusText =
-    healthy
-      ? "Healthy"
-      : degraded
-        ? "Degraded"
-        : "Unhealthy";
-
-
-  const statusColor =
-    healthy
-      ? "text-emerald-700"
-      : degraded
-        ? "text-amber-700"
-        : "text-red-700";
-
-
-  const dotColor =
-    healthy
-      ? "bg-emerald-500"
-      : degraded
-        ? "bg-amber-500"
-        : "bg-red-500";
-
-
-  const footerBackground =
-    healthy
-      ? "bg-emerald-50/28"
-      : degraded
-        ? "bg-amber-50/30"
-        : "bg-red-50/30";
-
-
-  return (
-    <div
-      className="
-        flex
-        min-h-[150px]
-        flex-col
-        justify-between
-        rounded-[24px]
-        border
-        border-white/28
-        px-4
-        py-4
-        transition
-        duration-300
-        hover:-translate-y-1
-        hover:border-white/45
-        hover:bg-white/22
-        hover:shadow-[0_16px_34px_rgba(53,42,76,0.10)]
-      "
-      style={{
-        background:
-          "rgba(255,255,255,0.14)",
-
-        backdropFilter:
-          "blur(16px)",
-
-        WebkitBackdropFilter:
-          "blur(16px)",
-
-        boxShadow:
-          `
-            inset 0 1px 0 rgba(255,255,255,0.24)
-          `,
-      }}
-    >
-
-      <div>
-
-        <div
-          className="
-            flex
-            items-start
-            justify-between
-            gap-3
-          "
-        >
-
-          <div
-            className={`
-              flex
-              h-[52px]
-              w-[52px]
-              shrink-0
-              items-center
-              justify-center
-              rounded-[18px]
-              ${iconBackground}
-            `}
-          >
-
-            <Icon
-              className={`
-                h-7
-                w-7
-                ${iconColor}
-              `}
-            />
-
-          </div>
-
-
-          <span
-            className={`
-              mt-1
-              flex
-              shrink-0
-              items-center
-              gap-1.5
-              rounded-full
-              bg-white/18
-              px-2.5
-              py-1.5
-              text-[10px]
-              font-semibold
-              backdrop-blur-xl
-              ${statusColor}
-            `}
-          >
-
-            <span
-              className={`
-                h-2
-                w-2
-                rounded-full
-                ${dotColor}
-              `}
-            />
-
-            {statusText}
-
-          </span>
-
-        </div>
-
-
-        <p
-          className="
-            mt-4
-            truncate
-            text-[15px]
-            font-semibold
-            tracking-[-0.01em]
-            text-slate-900
-          "
-        >
-          {service.name}
-        </p>
-
-      </div>
-
-
-      <div
-        className={`
-          mt-4
-          rounded-[14px]
-          border
-          border-white/25
-          px-3
-          py-2.5
-          backdrop-blur-lg
-          ${footerBackground}
-        `}
-      >
-
-        <p
-          className="
-            truncate
-            text-[11px]
-            font-medium
-            text-slate-600
-          "
-          title={
-            service.detail
-          }
-        >
-          {service.detail}
-        </p>
-
-      </div>
-
-    </div>
-  );
-}
-
-
-/* ========================================================= */
-/* OPERATIONS                                                */
-/* ========================================================= */
-
-
-function OperationRow({
-  label,
-  value,
-  note,
-  icon: Icon,
-  tone,
-}: {
-  label: string;
-  value: number;
-  note: string;
-  icon: DashboardIcon;
-
-  tone:
-    | "rose"
-    | "amber"
-    | "indigo"
-    | "emerald"
-    | "violet";
-}) {
-  const tones = {
-    rose: {
-      icon:
-        "text-rose-600",
-
-      iconBackground:
-        "bg-rose-100/60",
-
-      accent:
-        "bg-rose-400",
-    },
-
-    amber: {
-      icon:
-        "text-amber-600",
-
-      iconBackground:
-        "bg-amber-100/60",
-
-      accent:
-        "bg-amber-400",
-    },
-
-    indigo: {
-      icon:
-        "text-indigo-600",
-
-      iconBackground:
-        "bg-indigo-100/60",
-
-      accent:
-        "bg-indigo-500",
-    },
-
-    emerald: {
-      icon:
-        "text-emerald-600",
-
-      iconBackground:
-        "bg-emerald-100/60",
-
-      accent:
-        "bg-emerald-400",
-    },
-
-    violet: {
-      icon:
-        "text-violet-600",
-
-      iconBackground:
-        "bg-violet-100/60",
-
-      accent:
-        "bg-violet-500",
-    },
-  };
-
-
-  const style =
-    tones[tone];
-
-
-  return (
-    <div
-      className="
-        group
-        relative
-        overflow-hidden
-        rounded-[20px]
-        border
-        border-white/25
-        px-4
-        py-3.5
-        transition
-        duration-300
-        hover:border-white/40
-        hover:bg-white/20
-      "
-      style={{
-        background:
-          "rgba(255,255,255,0.13)",
-
-        backdropFilter:
-          "blur(14px)",
-
-        WebkitBackdropFilter:
-          "blur(14px)",
-      }}
-    >
-
-      <div
-        className={`
-          absolute
-          bottom-0
-          left-0
-          top-0
-          w-[3px]
-          opacity-75
-          ${style.accent}
-        `}
-      />
-
-
-      <div
-        className="
-          flex
-          items-center
-          gap-3
-        "
-      >
-
-        <div
-          className={`
-            flex
-            h-11
-            w-11
-            shrink-0
-            items-center
-            justify-center
-            rounded-[15px]
-            ${style.iconBackground}
-          `}
-        >
-
-          <Icon
-            className={`
-              h-5
-              w-5
-              ${style.icon}
-            `}
-          />
-
-        </div>
-
-
-        <div
-          className="
-            min-w-0
-            flex-1
-          "
-        >
-
-          <div
-            className="
-              flex
-              items-center
-              justify-between
-              gap-3
-            "
-          >
-
-            <p
-              className="
-                truncate
-                text-[12px]
-                font-medium
-                text-slate-700
-              "
-            >
-              {label}
-            </p>
-
-
-            <p
-              className="
-                text-[25px]
-                font-semibold
-                leading-none
-                tracking-tight
-                text-slate-950
-              "
-            >
-              {value}
-            </p>
-
-          </div>
-
-
-          <p
-            className="
-              mt-1
-              truncate
-              text-[10px]
-              text-slate-600
-            "
-          >
-            {note}
-          </p>
-
-        </div>
-
-      </div>
-
-    </div>
-  );
-}
-
-
-/* ========================================================= */
-/* INCIDENT CHART                                            */
-/* ========================================================= */
-
-
-function IncidentChart({
-  data,
-}: {
-  data: TrendPoint[];
-}) {
-  const max = Math.max(
+  const pipelineTotal = Math.max(
     1,
-
-    ...data.flatMap(
-      (point) => [
-        point.detected,
-        point.resolved,
-      ]
-    )
+    overview.counts.investigating +
+      overview.counts.pending_approval +
+      overview.counts.recovered
   );
 
-
-  const detectedTotal =
-    data.reduce(
-      (
-        total,
-        item
-      ) =>
-        total +
-        item.detected,
-      0
-    );
-
-
-  const resolvedTotal =
-    data.reduce(
-      (
-        total,
-        item
-      ) =>
-        total +
-        item.resolved,
-      0
-    );
-
-
   return (
-    <div
-      className="
-        px-6
-        pb-6
-        pt-4
-      "
-    >
-
-      <div
-        className="
-          mb-5
-          flex
-          items-end
-          gap-8
-        "
-      >
-
-        <div>
-
-          <p
-            className="
-              text-xs
-              text-slate-600
-            "
-          >
-            Detected
-          </p>
-
-
-          <p
-            className="
-              mt-1
-              text-[28px]
-              font-semibold
-              tracking-tight
-              text-slate-950
-            "
-          >
-            {detectedTotal}
-          </p>
-
-        </div>
-
-
-        <div>
-
-          <p
-            className="
-              text-xs
-              text-slate-600
-            "
-          >
-            Resolved
-          </p>
-
-
-          <p
-            className="
-              mt-1
-              text-[28px]
-              font-semibold
-              tracking-tight
-              text-slate-950
-            "
-          >
-            {resolvedTotal}
-          </p>
-
-        </div>
-
+    <div className="w-full px-5 pb-8 sm:px-6 xl:px-9">
+      <div className="mb-5 flex justify-end">
+        <TimeRangeSelector value={selectedRange} />
       </div>
 
+      <section className="grid gap-5 xl:grid-cols-12">
+        <div className="space-y-5 xl:col-span-8">
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div className="relative overflow-hidden rounded-[30px] bg-gradient-to-br from-[#ff765f] via-[#f65c75] to-[#e849a0] p-7 text-white shadow-[0_22px_46px_rgba(232,73,160,.17)]">
+              <div className="absolute -right-8 -top-10 h-40 w-40 rounded-full border-[22px] border-white/10" />
 
-      <div
-        className="
-          relative
-          h-[330px]
-        "
-      >
-
-        <div
-          className="
-            absolute
-            inset-0
-            flex
-            flex-col
-            justify-between
-          "
-        >
-
-          {[0, 1, 2, 3].map(
-            (line) => (
-              <div
-                key={line}
-                className="
-                  border-t
-                  border-dashed
-                  border-slate-400/35
-                "
-              />
-            )
-          )}
-
-        </div>
-
-
-        <div
-          className="
-            absolute
-            inset-0
-            flex
-            items-end
-            gap-3
-            pt-6
-          "
-        >
-
-          {data.map(
-            (
-              point,
-              index
-            ) => {
-              const detectedHeight =
-                point.detected === 0
-                  ? 2
-                  : Math.max(
-                      10,
-                      (
-                        point.detected /
-                        max
-                      ) * 100
-                    );
-
-
-              const resolvedHeight =
-                point.resolved === 0
-                  ? 2
-                  : Math.max(
-                      10,
-                      (
-                        point.resolved /
-                        max
-                      ) * 100
-                    );
-
-
-              return (
-                <div
-                  key={
-                    `${point.label}-${index}`
-                  }
-                  className="
-                    flex
-                    h-full
-                    min-w-0
-                    flex-1
-                    flex-col
-                    justify-end
-                  "
-                >
-
-                  <div
-                    className="
-                      flex
-                      flex-1
-                      items-end
-                      justify-center
-                      gap-1.5
-                    "
-                  >
-
-                    <div
-                      className="
-                        w-[34%]
-                        max-w-[42px]
-                        rounded-t-[10px]
-                        bg-gradient-to-t
-                        from-indigo-600
-                        to-violet-300
-                        shadow-[0_7px_18px_rgba(99,102,241,0.18)]
-                      "
-                      style={{
-                        height:
-                          `${detectedHeight}%`,
-                      }}
-                    />
-
-
-                    <div
-                      className="
-                        w-[34%]
-                        max-w-[42px]
-                        rounded-t-[10px]
-                        bg-gradient-to-t
-                        from-emerald-500
-                        to-emerald-200
-                      "
-                      style={{
-                        height:
-                          `${resolvedHeight}%`,
-                      }}
-                    />
-
+              <div className="relative z-10">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[19px] text-white">Operations Pulse</p>
+                    <p className="mt-5 text-[52px] leading-none tracking-[-.05em]">
+                      {overview.counts.open_incidents}
+                    </p>
+                    <p className="mt-2 text-[13px] text-white/80">open incidents right now</p>
                   </div>
 
-
-                  <p
-                    className="
-                      mt-2
-                      truncate
-                      text-center
-                      text-[10px]
-                      text-slate-600
-                    "
-                  >
-                    {point.label}
-                  </p>
-
+                  <span className="rounded-full bg-white/18 px-3 py-1.5 text-[11px] uppercase tracking-wide">
+                    Live
+                  </span>
                 </div>
-              );
-            }
-          )}
 
-        </div>
+                <TrendLines data={trend} />
 
-      </div>
+                <div className="mt-5 grid grid-cols-3 divide-x divide-white/25 border-t border-white/20 pt-4">
+                  <HeroMetric label="Investigating" value={overview.counts.investigating} />
+                  <HeroMetric label="Approvals" value={overview.counts.pending_approval} />
+                  <HeroMetric label="Closed" value={closedIncidents} />
+                </div>
+              </div>
+            </div>
 
-    </div>
-  );
-}
-
-
-/* ========================================================= */
-/* LOWER PANELS                                              */
-/* ========================================================= */
-
-
-function Panel({
-  title,
-  href,
-  action,
-  children,
-}: {
-  title: string;
-  href: string;
-  action: string;
-  children: ReactNode;
-}) {
-  return (
-    <GlassCard>
-
-      <div
-        className="
-          flex
-          items-center
-          justify-between
-          border-b
-          border-white/25
-          px-5
-          py-4
-        "
-      >
-
-        <h2
-          className="
-            text-base
-            font-semibold
-            text-slate-950
-          "
-        >
-          {title}
-        </h2>
-
-
-        <Link
-          href={href}
-          className="
-            rounded-full
-            border
-            border-white/25
-            bg-white/16
-            px-3
-            py-1.5
-            text-[11px]
-            font-semibold
-            text-slate-700
-            backdrop-blur-lg
-            transition
-            hover:bg-white/28
-          "
-        >
-          {action} →
-        </Link>
-
-      </div>
-
-
-      {children}
-
-    </GlassCard>
-  );
-}
-
-
-/* ========================================================= */
-/* ACTIVE INCIDENTS                                          */
-/* ========================================================= */
-
-
-function ActiveIncidents({
-  incidents,
-}: {
-  incidents:
-    DashboardIncident[];
-}) {
-  if (
-    incidents.length === 0
-  ) {
-    return (
-      <div
-        className="
-          flex
-          min-h-[200px]
-          items-center
-          justify-center
-          px-6
-        "
-      >
-
-        <div
-          className="
-            text-center
-          "
-        >
-
-          <div
-            className="
-              mx-auto
-              flex
-              h-12
-              w-12
-              items-center
-              justify-center
-              rounded-full
-              border
-              border-emerald-200/40
-              bg-emerald-100/45
-              backdrop-blur-lg
-            "
-          >
-
-            <CheckCircle2
-              className="
-                h-6
-                w-6
-                text-emerald-600
-              "
-            />
-
-          </div>
-
-
-          <p
-            className="
-              mt-3
-              text-sm
-              font-semibold
-              text-slate-800
-            "
-          >
-            No active incidents
-          </p>
-
-
-          <p
-            className="
-              mt-1
-              text-xs
-              text-slate-600
-            "
-          >
-            All monitored systems are currently resolved.
-          </p>
-
-        </div>
-
-      </div>
-    );
-  }
-
-
-  return (
-    <div
-      className="
-        divide-y
-        divide-white/20
-      "
-    >
-
-      {incidents
-        .slice(0, 5)
-        .map(
-          (incident) => (
-            <div
-              key={
-                incident.id
-              }
-              className="
-                flex
-                items-center
-                justify-between
-                gap-4
-                px-5
-                py-4
-                transition
-                hover:bg-white/12
-              "
-            >
-
-              <div
-                className="
-                  min-w-0
-                "
-              >
-
-                <p
-                  className="
-                    truncate
-                    text-sm
-                    font-semibold
-                    text-slate-900
-                  "
-                >
-                  {incident.title}
-                </p>
-
-
-                <p
-                  className="
-                    mt-1
-                    truncate
-                    text-xs
-                    text-slate-600
-                  "
-                >
-                  #{incident.id}
-                  {" · "}
-                  {incident.service}
-                </p>
-
+            <Panel className="p-7">
+              <div className="flex items-start justify-between">
+                <p className="text-[22px] text-[#171b27]">Response Pipeline</p>
+                <CircleDot className="h-5 w-5 text-[#aaa7a0]" />
               </div>
 
+              <div className="mt-7 flex items-center justify-between gap-5">
+                <PipelineRing
+                  investigating={overview.counts.investigating}
+                  pending={overview.counts.pending_approval}
+                  recovered={overview.counts.recovered}
+                  total={pipelineTotal}
+                />
 
-              <IncidentStatusBadge
-                status={
-                  incident.status
-                }
-              />
-
-            </div>
-          )
-        )}
-
-    </div>
-  );
-}
-
-
-/* ========================================================= */
-/* RECENT ACTIVITY                                           */
-/* ========================================================= */
-
-
-function RecentActivity({
-  incidents,
-}: {
-  incidents:
-    DashboardIncident[];
-}) {
-  if (
-    incidents.length === 0
-  ) {
-    return (
-      <div
-        className="
-          flex
-          min-h-[200px]
-          items-center
-          justify-center
-          px-6
-        "
-      >
-
-        <div
-          className="text-center">
-
-          <div
-            className="
-              mx-auto
-              flex
-              h-12
-              w-12
-              items-center
-              justify-center
-              rounded-full
-              border
-              border-indigo-200/35
-              bg-indigo-100/42
-              backdrop-blur-lg
-            "
-          >
-
-            <Activity
-              className="
-                h-6
-                w-6
-                text-indigo-600
-              "
-            />
-
+                <div className="min-w-[145px] space-y-4">
+                  <LegendRow
+                    color="bg-[#ff765f]"
+                    label="Investigating"
+                    value={overview.counts.investigating}
+                  />
+                  <LegendRow
+                    color="bg-[#f5bd3b]"
+                    label="Approval"
+                    value={overview.counts.pending_approval}
+                  />
+                  <LegendRow
+                    color="bg-[#55cfa0]"
+                    label="Recovered"
+                    value={overview.counts.recovered}
+                  />
+                </div>
+              </div>
+            </Panel>
           </div>
 
+          <Panel className="overflow-hidden">
+            <div className="flex flex-col justify-between gap-4 px-6 pb-2 pt-6 sm:flex-row sm:items-start">
+              <p className="text-[22px] text-[#111625]">Incident Activity</p>
 
-          <p
-            className="
-              mt-3
-              text-sm
-              font-semibold
-              text-slate-800
-            "
-          >
-            No recent activity
-          </p>
+              <div className="flex gap-4 text-[11px] text-[#777b84]">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-[#ef4e91]" />
+                  Detected
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-[#111625]" />
+                  Resolved
+                </span>
+              </div>
+            </div>
 
+            <IncidentChart data={trend} />
+          </Panel>
         </div>
 
-      </div>
-    );
-  }
+        <div className="space-y-5 xl:col-span-4">
+          <div className="grid grid-cols-2 gap-5">
+            <Panel className="p-4 sm:p-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[20px] bg-[#f8cecb]">
+                  <ShieldCheck className="h-6 w-6 text-[#111625]" />
+                </div>
 
-
-  return (
-    <div
-      className="
-        divide-y
-        divide-white/20
-      "
-    >
-
-      {incidents
-        .slice(0, 5)
-        .map(
-          (incident) => (
-            <div
-              key={
-                incident.id
-              }
-              className="
-                flex
-                items-center
-                justify-between
-                gap-4
-                px-5
-                py-4
-                transition
-                hover:bg-white/12
-              "
-            >
-
-              <div
-                className="
-                  min-w-0
-                "
-              >
-
-                <p
-                  className="
-                    truncate
-                    text-sm
-                    font-semibold
-                    text-slate-900
-                  "
-                >
-                  {incident.title}
-                </p>
-
-
-                <p
-                  className="
-                    mt-1
-                    truncate
-                    text-xs
-                    text-slate-600
-                  "
-                >
-                  #{incident.id}
-                  {" · "}
-                  {incident.service}
-                </p>
-
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[27px] tracking-[-.04em]">
+                      {healthyServices}/{overview.services.length}
+                    </p>
+                    <span className="hidden text-[11px] text-[#55a87f] sm:inline">LIVE</span>
+                  </div>
+                  <p className="text-[14px] text-[#111625]">Services Healthy</p>
+                </div>
               </div>
 
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[#ef4e91] to-[#ff755f]"
+                  style={{
+                    width: `${
+                      overview.services.length
+                        ? (healthyServices / overview.services.length) * 100
+                        : 0
+                    }%`,
+                  }}
+                />
+              </div>
+            </Panel>
 
-              <IncidentStatusBadge
-                status={
-                  incident.status
-                }
-              />
+            <Panel className="flex items-center gap-3 p-4 sm:p-5">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[20px] bg-[#e6eafc]">
+                <FileText className="h-6 w-6 text-[#5364db]" />
+              </div>
 
+              <div className="min-w-0 flex-1">
+                <p className="text-[27px] tracking-[-.04em]">
+                  {overview.counts.postmortems}
+                </p>
+                <p className="text-[14px] text-[#111625]">Postmortems</p>
+              </div>
+            </Panel>
+          </div>
+
+          <Panel className="p-6">
+            <div className="flex items-center justify-between">
+              <p className="text-[22px] text-[#111625]">Service Status</p>
+              <Activity className="h-5 w-5 text-[#aaa7a0]" />
             </div>
-          )
-        )}
 
+            <div className="mt-5 space-y-3">
+              {overview.services.map((service) => (
+                <ServiceRow key={service.key} service={service} />
+              ))}
+            </div>
+          </Panel>
+        </div>
+      </section>
+
+      <section className="mt-5 grid gap-5 xl:grid-cols-12">
+        <Panel className="overflow-hidden xl:col-span-8">
+          <div className="flex items-center justify-between px-6 py-5">
+            <p className="text-[22px] text-[#111625]">Recent Incidents</p>
+
+            <Link
+              href="/incidents"
+              className="flex items-center gap-1 text-[13px] text-[#ef4e91]"
+            >
+              View all
+              <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          <div className="px-4 pb-4">
+            {overview.recent_incidents.length ? (
+              overview.recent_incidents
+                .slice(0, 5)
+                .map((incident) => <RecentIncident key={incident.id} incident={incident} />)
+            ) : (
+              <div className="rounded-2xl bg-white/60 p-8 text-center text-sm text-[#8b8e96]">
+                No recent incidents in this window.
+              </div>
+            )}
+          </div>
+        </Panel>
+
+        <Panel className="relative overflow-hidden p-6 xl:col-span-4">
+          <div className="absolute -bottom-16 -right-10 h-44 w-44 rounded-full bg-[#ffd5c9]" />
+
+          <div className="relative z-10">
+            <div className="flex items-center justify-between">
+              <p className="text-[22px] text-[#111625]">Recovery Summary</p>
+              <CheckCircle2 className="h-5 w-5 text-[#55a87f]" />
+            </div>
+
+            <p className="mt-8 text-[56px] leading-none tracking-[-.05em]">
+              {overview.counts.recovered}
+            </p>
+            <p className="mt-2 text-[15px] text-[#4b505c]">verified recoveries</p>
+
+            <div className="mt-7 flex items-center gap-3 rounded-2xl bg-white/65 p-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eaf8f0]">
+                <Wrench className="h-4 w-4 text-[#16875d]" />
+              </div>
+              <p className="text-[14px] text-[#111625]">Human approval preserved</p>
+            </div>
+          </div>
+        </Panel>
+      </section>
     </div>
   );
 }
 
+function HeroMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="px-3 first:pl-0">
+      <p className="text-[11px] text-white/75">{label}</p>
+      <p className="mt-1 text-[22px]">{value}</p>
+    </div>
+  );
+}
 
-/* ========================================================= */
-/* INCIDENT STATUS                                           */
-/* ========================================================= */
+function TrendLines({ data }: { data: TrendPoint[] }) {
+  const max = Math.max(1, ...data.flatMap((point) => [point.detected, point.resolved]));
 
-
-function IncidentStatusBadge({
-  status,
-}: {
-  status: string;
-}) {
-  const normalized =
-    status.toUpperCase();
-
-
-  const style =
-    normalized === "OPEN"
-      ? (
-        "border-red-200/40 "
-        + "bg-red-100/42 "
-        + "text-red-700"
+  const points = (key: "detected" | "resolved") =>
+    data
+      .map(
+        (point, index) =>
+          `${(index / Math.max(1, data.length - 1)) * 100},${34 - (point[key] / max) * 26}`
       )
-      : normalized === "RESOLVED"
-        ? (
-          "border-emerald-200/40 "
-          + "bg-emerald-100/42 "
-          + "text-emerald-700"
-        )
-        : (
-          "border-indigo-200/40 "
-          + "bg-indigo-100/42 "
-          + "text-indigo-700"
-        );
-
+      .join(" ");
 
   return (
-    <span
-      className={`
-        shrink-0
-        rounded-full
-        border
-        px-2.5
-        py-1
-        text-[10px]
-        font-semibold
-        backdrop-blur-lg
-        ${style}
-      `}
-    >
-      {status}
-    </span>
+    <svg viewBox="0 0 100 40" className="mt-7 h-20 w-full overflow-visible">
+      <polyline
+        points={points("detected")}
+        fill="none"
+        stroke="rgba(255,255,255,.95)"
+        strokeWidth="1.1"
+        vectorEffect="non-scaling-stroke"
+      />
+      <polyline
+        points={points("resolved")}
+        fill="none"
+        stroke="rgba(70,38,127,.72)"
+        strokeWidth="1.1"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
   );
 }
 
+function PipelineRing({
+  investigating,
+  pending,
+  recovered,
+  total,
+}: {
+  investigating: number;
+  pending: number;
+  recovered: number;
+  total: number;
+}) {
+  const a = (investigating / total) * 100;
+  const b = (pending / total) * 100;
 
-/* ========================================================= */
-/* TREND DATA                                                */
-/* ========================================================= */
+  return (
+    <div
+      className="relative h-[170px] w-[170px] shrink-0 rounded-full"
+      style={{
+        background: `conic-gradient(#ff765f 0 ${a}%, #f5bd3b ${a}% ${a + b}%, #55cfa0 ${a + b}% 100%)`,
+      }}
+    >
+      <div className="absolute inset-[14px] flex flex-col items-center justify-center rounded-full bg-[#faf8f4]">
+        <p className="text-[32px] tracking-[-.04em]">
+          {investigating + pending + recovered}
+        </p>
+        <p className="text-[11px] uppercase tracking-wide text-[#95989f]">pipeline events</p>
+      </div>
+    </div>
+  );
+}
 
+function LegendRow({
+  color,
+  label,
+  value,
+}: {
+  color: string;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="flex items-center gap-2 text-[13px] text-[#626771]">
+        <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
+        {label}
+      </span>
+      <span className="text-[15px]">{value}</span>
+    </div>
+  );
+}
 
-function buildTrendData(
-  incidents:
-    DashboardIncident[],
+function IncidentChart({ data }: { data: TrendPoint[] }) {
+  const max = Math.max(1, ...data.flatMap((point) => [point.detected, point.resolved]));
 
-  range:
-    TimeRange
-): TrendPoint[] {
-  const now =
-    Date.now();
+  return (
+    <div className="px-6 pb-6 pt-4">
+      <div className="relative h-[280px]">
+        <div className="absolute inset-0 flex flex-col justify-between">
+          {[0, 1, 2, 3].map((line) => (
+            <div key={line} className="border-t border-[#ddd9d1]" />
+          ))}
+        </div>
 
+        <div className="absolute inset-0 flex items-end gap-3 pt-4">
+          {data.map((point, index) => (
+            <div
+              key={`${point.label}-${index}`}
+              className="flex h-full min-w-0 flex-1 flex-col justify-end"
+            >
+              <div className="flex flex-1 items-end justify-center gap-1.5">
+                <div
+                  className="w-[26%] max-w-[34px] rounded-t-[10px] bg-gradient-to-t from-[#ef4e91] to-[#ff8a68]"
+                  style={{
+                    height: `${
+                      point.detected === 0
+                        ? 2
+                        : Math.max(9, (point.detected / max) * 100)
+                    }%`,
+                  }}
+                />
+                <div
+                  className="w-[26%] max-w-[34px] rounded-t-[10px] bg-[#111625]"
+                  style={{
+                    height: `${
+                      point.resolved === 0
+                        ? 2
+                        : Math.max(9, (point.resolved / max) * 100)
+                    }%`,
+                  }}
+                />
+              </div>
+              <p className="mt-2 truncate text-center text-[10px] text-[#94979e]">
+                {point.label}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
+function ServiceRow({ service }: { service: DashboardServiceHealth }) {
+  const visual = serviceVisuals[service.key] ?? serviceVisuals["benchmark-api"];
+  const Icon = visual.icon;
+  const tone =
+    service.status === "HEALTHY"
+      ? "green"
+      : service.status === "DEGRADED"
+        ? "amber"
+        : "red";
+
+  return (
+    <div className="flex items-center gap-3 rounded-2xl bg-white/58 p-3.5">
+      <div
+        className={`flex h-10 w-10 items-center justify-center rounded-xl ${visual.background}`}
+      >
+        <Icon className={`h-5 w-5 ${visual.color}`} />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <p className="truncate text-[14px] text-[#111625]">{service.name}</p>
+          <StatusBadge text={service.status} tone={tone} />
+        </div>
+        <p className="mt-1 truncate text-[11px] text-[#90939a]">{service.detail}</p>
+      </div>
+    </div>
+  );
+}
+
+function RecentIncident({ incident }: { incident: DashboardIncident }) {
+  return (
+    <Link
+      href={`/incidents/${incident.id}`}
+      className="group grid grid-cols-[44px_minmax(0,1fr)_130px_100px] items-center gap-3 rounded-2xl px-3 py-3.5 transition hover:bg-white/70"
+    >
+      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#fff0ec]">
+        <AlertTriangle className="h-4 w-4 text-[#e65245]" />
+      </div>
+
+      <div className="min-w-0">
+        <p className="truncate text-[14px] text-[#111625] group-hover:text-[#ef4e91]">
+          {incident.title}
+        </p>
+        <p className="mt-1 truncate text-[11px] text-[#94979e]">
+          #{incident.id} · {incident.service}
+        </p>
+      </div>
+
+      <StatusBadge
+        text={incident.severity}
+        tone={incident.severity === "HIGH" || incident.severity === "CRITICAL" ? "red" : "amber"}
+      />
+
+      <StatusBadge
+        text={incident.status}
+        tone={incident.status === "RESOLVED" ? "green" : "red"}
+      />
+    </Link>
+  );
+}
+
+function buildTrendData(incidents: DashboardIncident[], range: TimeRange): TrendPoint[] {
+  const now = Date.now();
   const config = {
-    "1h": {
-      hours: 1,
-      buckets: 6,
-    },
-
-    "6h": {
-      hours: 6,
-      buckets: 6,
-    },
-
-    "24h": {
-      hours: 24,
-      buckets: 8,
-    },
-
-    "7d": {
-      hours: 168,
-      buckets: 7,
-    },
+    "1h": { hours: 1, buckets: 6 },
+    "6h": { hours: 6, buckets: 6 },
+    "24h": { hours: 24, buckets: 8 },
+    "7d": { hours: 168, buckets: 7 },
   }[range];
 
+  const start = now - config.hours * 60 * 60 * 1000;
+  const bucketSize = (now - start) / config.buckets;
 
-  const start =
-    now -
-    config.hours *
-      60 *
-      60 *
-      1000;
+  const result = Array.from({ length: config.buckets }, (_, index) => {
+    const date = new Date(start + bucketSize * index);
 
+    return {
+      label:
+        range === "7d"
+          ? new Intl.DateTimeFormat("en", { weekday: "short" }).format(date)
+          : new Intl.DateTimeFormat("en", {
+              hour: "numeric",
+              minute: range === "1h" ? "2-digit" : undefined,
+            }).format(date),
+      detected: 0,
+      resolved: 0,
+    };
+  });
 
-  const bucketSize =
-    (
-      now -
-      start
-    ) /
-    config.buckets;
+  const getIndex = (value: string | null | undefined) => {
+    if (!value) return null;
 
-
-  const result:
-    TrendPoint[] =
-      Array.from(
-        {
-          length:
-            config.buckets,
-        },
-
-        (
-          _,
-          index
-        ) => {
-          const bucketStart =
-            start +
-            bucketSize *
-              index;
-
-
-          const date =
-            new Date(
-              bucketStart
-            );
-
-
-          const label =
-            range === "7d"
-              ? new Intl.DateTimeFormat(
-                  "en",
-                  {
-                    weekday:
-                      "short",
-                  }
-                ).format(
-                  date
-                )
-              : new Intl.DateTimeFormat(
-                  "en",
-                  {
-                    hour:
-                      "numeric",
-
-                    minute:
-                      range ===
-                      "1h"
-                        ? "2-digit"
-                        : undefined,
-                  }
-                ).format(
-                  date
-                );
-
-
-          return {
-            label,
-            detected: 0,
-            resolved: 0,
-          };
-        }
-      );
-
-
-  function getIndex(
-    value:
-      | string
-      | null
-      | undefined
-  ) {
-    if (!value) {
-      return null;
-    }
-
-
-    const timestamp =
-      new Date(
-        value
-      ).getTime();
-
-
-    if (
-      timestamp < start ||
-      timestamp > now
-    ) {
-      return null;
-    }
-
+    const timestamp = new Date(value).getTime();
+    if (timestamp < start || timestamp > now) return null;
 
     return Math.min(
       config.buckets - 1,
-
-      Math.floor(
-        (
-          timestamp -
-          start
-        ) /
-          bucketSize
-      )
+      Math.floor((timestamp - start) / bucketSize)
     );
+  };
+
+  for (const incident of incidents) {
+    const detected = getIndex(incident.first_detected_at);
+    if (detected !== null) result[detected].detected += 1;
+
+    const resolved = getIndex(incident.resolved_at);
+    if (resolved !== null) result[resolved].resolved += 1;
   }
-
-
-  for (
-    const incident
-    of incidents
-  ) {
-    const detectedIndex =
-      getIndex(
-        incident
-          .first_detected_at
-      );
-
-
-    if (
-      detectedIndex !== null
-    ) {
-      result[
-        detectedIndex
-      ].detected += 1;
-    }
-
-
-    const resolvedIndex =
-      getIndex(
-        incident
-          .resolved_at
-      );
-
-
-    if (
-      resolvedIndex !== null
-    ) {
-      result[
-        resolvedIndex
-      ].resolved += 1;
-    }
-  }
-
 
   return result;
 }
