@@ -269,7 +269,7 @@ This gives AegisOps two separate views:
 
 ## Core Capabilities
 
-| Area | Implementation |
+|Area | Implementation |
 |---|---|
 | **Detection** | Deterministic Prometheus rules with incident deduplication |
 | **Investigation** | Checkpointed LangGraph agent with Gemini |
@@ -287,7 +287,7 @@ This gives AegisOps two separate views:
 
 ## Tech Stack
 
-| Layer | Technologies |
+|Layer | Technologies |
 |---|---|
 | **Backend** | Python 3.12, FastAPI, Pydantic, psycopg |
 | **Agent / AI** | LangGraph, Gemini, SentenceTransformers |
