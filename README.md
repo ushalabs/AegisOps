@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/screenshots/baanner.png" alt="AegisOps — AI-Assisted Incident Operations" width="100%" />
+  <img src="docs/screenshots/banner.png" alt="AegisOps — AI-Assisted Incident Operations" width="100%" />
 </p>
 
 <p align="center">
