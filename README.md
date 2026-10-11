@@ -107,10 +107,6 @@ Backend executes only a predefined action.
 Monitoring independently verifies recovery.
 ```
 
-<p align="center">
-  <img src="docs/screenshots/phase%2015/remidation.png" alt="AegisOps human-in-the-loop remediation" width="95%" />
-</p>
-
 ### Independent recovery verification
 
 A successful command is **not** treated as proof of recovery.
@@ -166,6 +162,49 @@ flowchart LR
 ```
 
 The current benchmark environment is intentionally separate from the AegisOps core. Phase 17 moves benchmark-specific telemetry, log access, remediation, and recovery behavior behind connector contracts so the same core can support AWS, Velora, and future systems.
+
+---
+
+## Workflow Orchestration
+
+AegisOps uses **n8n** for workflow coordination while keeping state and authorization in the backend.
+
+### 1. Incident Orchestration
+
+The first workflow receives newly detected incidents, routes them by severity, rechecks the authoritative incident state, skips incidents that already recovered, and forwards active incidents into the shared investigation workflow.
+
+```text
+New OPEN incident
+→ severity routing
+→ live incident recheck
+→ recovered? skip
+→ still open? investigation intake
+```
+
+<p align="center">
+  <img src="docs/screenshots/phase%204/n8n%2C%20true.png" alt="AegisOps Incident Orchestration workflow" width="95%" />
+</p>
+
+### 2. Investigation Intake
+
+The investigation workflow coordinates the longer incident-response lifecycle:
+
+```text
+LangGraph investigation
+→ persist investigation
+→ create remediation proposal
+→ wait for human approval
+→ protected execution
+→ recovery verification
+→ postmortem generation
+→ incident-memory creation
+```
+
+<p align="center">
+  <img src="docs/screenshots/phase%2014/phase%2014%20n8n.png" alt="AegisOps Investigation Intake workflow" width="95%" />
+</p>
+
+n8n orchestrates the process, but it does not become the source of truth for approval, execution authorization, recovery state, or incident memory.
 
 ---
 
@@ -225,49 +264,6 @@ This gives AegisOps two separate views:
 |---|---|
 | **Next.js Operator Dashboard** | Incidents, investigations, approvals, recovery, postmortems |
 | **Grafana** | Infrastructure and agent engineering telemetry |
-
----
-
-## Workflow Orchestration
-
-AegisOps uses **n8n** for workflow coordination while keeping state and authorization in the backend.
-
-### 1. Incident Orchestration
-
-The first workflow receives newly detected incidents, routes them by severity, rechecks the authoritative incident state, skips incidents that already recovered, and forwards active incidents into the shared investigation workflow.
-
-```text
-New OPEN incident
-→ severity routing
-→ live incident recheck
-→ recovered? skip
-→ still open? investigation intake
-```
-
-<p align="center">
-  <img src="docs/screenshots/phase%204/n8n%2C%20true.png" alt="AegisOps Incident Orchestration workflow" width="95%" />
-</p>
-
-### 2. Investigation Intake
-
-The investigation workflow coordinates the longer incident-response lifecycle:
-
-```text
-LangGraph investigation
-→ persist investigation
-→ create remediation proposal
-→ wait for human approval
-→ protected execution
-→ recovery verification
-→ postmortem generation
-→ incident-memory creation
-```
-
-<p align="center">
-  <img src="docs/screenshots/phase%2014/phase%2014%20n8n.png" alt="AegisOps Investigation Intake workflow" width="95%" />
-</p>
-
-n8n orchestrates the process, but it does not become the source of truth for approval, execution authorization, recovery state, or incident memory.
 
 ---
 
