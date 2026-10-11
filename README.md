@@ -11,7 +11,9 @@
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-Backend-009688?logo=fastapi&logoColor=white">
   <img alt="LangGraph" src="https://img.shields.io/badge/LangGraph-Agentic%20Workflows-111111">
   <img alt="Gemini" src="https://img.shields.io/badge/Gemini-LLM-8E75B2?logo=google&logoColor=white">
+  <img alt="n8n" src="https://img.shields.io/badge/n8n-Orchestration-EA4B71?logo=n8n&logoColor=white">
   <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL%20%2B%20pgvector-Data-4169E1?logo=postgresql&logoColor=white">
+  <img alt="Prometheus" src="https://img.shields.io/badge/Prometheus-Observability-E6522C?logo=prometheus&logoColor=white">
   <img alt="Docker" src="https://img.shields.io/badge/Docker-Infrastructure-2496ED?logo=docker&logoColor=white">
 </p>
 
