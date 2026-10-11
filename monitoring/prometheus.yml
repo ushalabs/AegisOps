@@ -7,6 +7,12 @@ scrape_configs:
       - targets:
           - "benchmark-api:8000"
 
+  - job_name: "aegisops-api"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets:
+          - "host.docker.internal:8000"
+
   - job_name: "cadvisor"
     static_configs:
       - targets:

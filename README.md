@@ -1,12 +1,12 @@
 # AegisOps
 
-AegisOps is a modular AI-powered incident operations platform built to detect service failures, investigate evidence, propose human-approved remediation, execute only allowlisted recovery actions, independently verify recovery, and convert resolved incidents into reusable operational memory.
+AegisOps is a modular AI-assisted incident operations platform built to detect service failures, gather evidence, investigate incidents with a checkpointed LangGraph agent, propose human-approved remediation, execute only allowlisted recovery actions, independently verify recovery, and convert resolved incidents into reusable operational memory.
 
-The project is developed incrementally so each architectural layer is understood before higher-level orchestration and AI reasoning are added.
+The project is developed incrementally so each architectural layer is implemented and verified before higher-level automation is added.
 
-> **Current status:** Phase 15 complete — Operator Dashboard
-> **Next phase:** Phase 16 — Evals & Observability
-> **Roadmap:** 16 of 21 phases complete (Phases 0–15)
+> **Current status:** Phase 16 complete — Evals & Observability
+> **Next phase:** Phase 17 — Connector Architecture
+> **Roadmap:** 17 of 21 phases complete (Phases 0–16)
 
 ---
 
@@ -16,97 +16,79 @@ The project is developed incrementally so each architectural layer is understood
 flowchart TD
     BA[Benchmark API] --> BP[Benchmark PostgreSQL]
     BA --> BR[Benchmark Redis]
-    BA --> PM[Prometheus metrics]
+    BA --> PM[Application Metrics]
 
     CAD[cAdvisor] --> PROM[Prometheus]
     PM --> PROM
+    AAPI[FastAPI /metrics] --> PROM
     PROM --> GRAF[Grafana]
-    PROM --> DET[AegisOps rules and incident detector]
+    PROM --> DET[AegisOps Incident Detector]
 
     DET --> IDB[(AegisOps PostgreSQL + pgvector)]
     DET -->|New OPEN incident| WH[n8n Incident Orchestration]
 
-    WH --> SEV[Severity router]
-    SEV --> STATUS[Recheck authoritative incident state]
-    STATUS -->|Recovered| SKIP[Skip recovered incident]
+    WH --> STATUS[Recheck Authoritative Incident State]
+    STATUS -->|Recovered| SKIP[Skip]
     STATUS -->|Still OPEN| INTAKE[n8n Investigation Intake]
 
-    INTAKE -->|Stable run ID| API[FastAPI LangGraph endpoint]
+    INTAKE -->|Stable run ID| API[FastAPI LangGraph Endpoint]
     API --> GRAPH[LangGraph StateGraph]
 
-    GRAPH --> EVID[Current incident evidence]
-    EVID --> RAG[Runbook retrieval + reranking]
+    GRAPH --> EVID[Current Incident Evidence]
+    EVID --> RAG[Runbook Retrieval + Reranking]
 
-    IDB --> HIST[Similar historical incident memories]
+    IDB --> HIST[Historical Incident Memory]
     HIST --> GRAPH
 
-    RAG --> DECIDE[Gemini decision node]
-    DECIDE -->|Needs more evidence| TOOLS[Allowlisted diagnostic tools]
+    RAG --> DECIDE[Gemini Decision Node]
+    DECIDE -->|Needs Evidence| TOOLS[Allowlisted Read-only Tools]
 
-    TOOLS --> T1[Incident records]
-    TOOLS --> T2[Predefined Prometheus metrics]
-    TOOLS --> T3[Benchmark Docker logs/state]
+    TOOLS --> T1[Incident Records]
+    TOOLS --> T2[Prometheus Metrics]
+    TOOLS --> T3[Benchmark Logs / Container State]
 
     T1 --> DECIDE
     T2 --> DECIDE
     T3 --> DECIDE
 
-    DECIDE -->|Finished or budget reached| FINAL[Structured report finalization]
-    FINAL --> VALID[Validate report + source references]
+    DECIDE -->|Finished / Budget Reached| FINAL[Structured Report Finalization]
+    FINAL --> VALID[Schema + Source Validation]
     VALID --> IDB
 
-    IDB -->|Saved investigation| PROPOSE[Create allowlisted remediation proposal]
+    GRAPH --> OBS[Agent Observability Metrics]
+    OBS --> AAPI
+
+    IDB --> EVAL[Deterministic Evaluator + Golden Cases]
+    EVAL --> EVALDB[(eval_runs + eval_results)]
+
+    IDB -->|Saved Investigation| PROPOSE[Allowlisted Remediation Proposal]
     PROPOSE --> PDB[(remediation_proposals)]
 
-    PDB --> CALLBACK[Register private n8n resume callback]
-    CALLBACK --> CDB[(remediation_callbacks)]
-    CALLBACK --> WAIT[n8n webhook Wait]
-
-    DASH[Next.js Operator Dashboard] --> DAPI[Protected dashboard APIs]
+    DASH[Next.js Operator Dashboard] --> DAPI[Protected Dashboard APIs]
     DAPI --> IDB
-    DASH --> REVIEW[Backend review endpoint]
+    DASH --> REVIEW[Backend Review Endpoint]
 
-    REVIEW -->|Revalidate + persist decision| PDB
-    REVIEW -->|POST private callback| WAIT
+    REVIEW --> PDB
+    PDB --> EXEC[Approved Remediation Execution]
+    EXEC --> EDB[(remediation_executions)]
 
-    WAIT --> DETAIL[Fetch fresh proposal state]
-    DETAIL --> APPROVED{Review Approved?}
-
-    APPROVED -->|No| STOP[Stop]
-    APPROVED -->|Yes| EXEC[Execute Approved Remediation]
-
-    EXEC --> REVALIDATE[Backend revalidation]
-    REVALIDATE --> CAT[Allowlisted remediation catalog]
-    CAT --> DOCKER[Fixed Docker Compose restart]
-    REVALIDATE --> EDB[(remediation_executions)]
-    DOCKER --> EDB
-
-    EDB --> SUCCESS{Execution Succeeded?}
-    SUCCESS -->|Yes| RECWAIT[Wait for Recovery]
-
-    RECWAIT --> VERIFY[Verify Recovery]
+    EDB --> VERIFY[Independent Recovery Verification]
     VERIFY --> RVDB[(recovery_verifications)]
-    VERIFY --> RECSTATE{Recovery State}
 
-    RECSTATE -->|VERIFYING| RECWAIT
-    RECSTATE -->|RECOVERED| CONFIRM[Recovery Confirmed]
-    RECSTATE -->|NOT_RECOVERED| NOTREC[Recovery Not Confirmed]
-    RECSTATE -->|INCONCLUSIVE| INC[Recovery Inconclusive]
-
-    CONFIRM --> POST[Generate Postmortem]
+    VERIFY -->|RECOVERED| POST[Generate Postmortem]
     POST --> PMDB[(incident_postmortems)]
     POST --> MEM[Build Incident Memory]
     MEM --> IMDB[(incident_memories + VECTOR 384)]
     IMDB --> HIST
 
-    GRAPH <-->|Checkpointed by run ID| IDB
+    GRAPH <-->|Checkpointed by Run ID| IDB
 
-    RUNBOOK[Markdown runbooks] --> CHUNK[Heading-aware chunks + embeddings]
+    RUNBOOK[Markdown Runbooks] --> CHUNK[Chunks + Embeddings]
     CHUNK --> IDB
     IDB --> RAG
 ```
 
-The benchmark environment is deliberately separate from the AegisOps core. It produces controlled failures and telemetry; AegisOps consumes that telemetry and persists incident, investigation, proposal, approval, execution, recovery, postmortem, and incident-memory state independently.
+The benchmark environment is deliberately separate from the AegisOps core. It produces controlled failures and telemetry; AegisOps consumes those signals and persists incident, investigation, approval, execution, recovery, postmortem, memory, and evaluation state independently.
 
 The remediation boundary remains strict:
 
@@ -119,7 +101,7 @@ Monitoring independently verifies recovery.
 Postmortem generation happens only after confirmed recovery.
 ```
 
-The Next.js dashboard is an operator-facing control surface, not a source of authority. n8n still orchestrates workflow progression, while FastAPI and PostgreSQL remain authoritative for review state, execution authorization, recovery state, and persisted operational memory.
+The Next.js dashboard is the operator-facing control surface. Grafana is the engineering observability surface. n8n orchestrates workflow progression, while FastAPI and PostgreSQL remain authoritative for state and authorization.
 
 ---
 
@@ -140,207 +122,70 @@ The Next.js dashboard is an operator-facing control surface, not a source of aut
 | Phase 10 — LangGraph Investigation Agent | ✅ Complete | Stateful investigation graph, PostgreSQL checkpointing, conditional tool loop, budget-aware persistence |
 | Phase 11 — Human-in-the-Loop Remediation | ✅ Complete | Allowlisted proposals, auditable review decisions, authenticated human approval |
 | Phase 12 — Automated Remediation | ✅ Complete | Backend-controlled execution, callback-driven approval, execution audit, idempotent retry protection |
-| Phase 13 — Recovery Verification | ✅ Complete | Bounded monitoring-based recovery verification, two consecutive healthy checks, terminal recovery outcomes, incident resolution |
-| Phase 14 — Postmortem & Incident Memory | ✅ Complete | Deterministic lifecycle reconstruction, grounded structured postmortems, 384-dim incident memories, pgvector similarity retrieval |
-| Phase 15 — Operator Dashboard | ✅ Complete | Next.js operations dashboard, live health overview, incident history/detail, investigations, human remediation approval, recovery visibility, postmortem views |
-
-Detailed phase documentation is available under:
-
-```text
-docs/phases/
-```
+| Phase 13 — Recovery Verification | ✅ Complete | Bounded monitoring-based verification, two consecutive healthy checks, terminal recovery outcomes, incident resolution |
+| Phase 14 — Postmortem & Incident Memory | ✅ Complete | Deterministic lifecycle reconstruction, grounded postmortems, 384-dimensional incident memories, pgvector similarity retrieval |
+| Phase 15 — Operator Dashboard | ✅ Complete | Next.js operations dashboard, live health, incident history/detail, investigations, remediation approval, recovery visibility, postmortems |
+| Phase 16 — Evals & Observability | ✅ Complete | Deterministic investigation evaluation, golden cases, persisted eval results, LangGraph/Gemini/tool/RAG metrics, Prometheus integration, Grafana agent observability |
 
 ---
 
-## Phase 2 — Monitoring Foundation
+## Phase Highlights
 
-Prometheus collects benchmark application metrics and cAdvisor container telemetry, while Grafana provides human-facing visualization.
+### Monitoring and Detection
 
-![AegisOps Benchmark Monitoring Dashboard](docs/screenshots/phase%202/grafana.png)
-
-```text
-Prometheus = telemetry source
-Grafana    = visualization
-AegisOps   = incident detection and state
-```
-
----
-
-## Phase 3 — Incident Detection Engine
-
-AegisOps converts deterministic Prometheus rule violations into durable PostgreSQL incidents.
-
-Current rule families include:
+Prometheus collects benchmark application metrics and cAdvisor container telemetry. AegisOps evaluates deterministic incident rules for:
 
 ```text
 PostgreSQL unavailable
 Redis unavailable
 HTTP 5xx rate elevated
-P95 latency elevated
+P95 API latency elevated
 ```
 
-A fingerprint based on `service + rule_key` prevents duplicate OPEN incidents. Persistent unhealthy telemetry updates the existing incident; recovered telemetry transitions it to `RESOLVED`.
+A fingerprint based on `service + rule_key` prevents duplicate OPEN incidents.
 
-![Incident records produced by the Phase 3 detector](docs/screenshots/phase%203/incidents.png)
+### Evidence-Grounded Investigation
 
----
-
-## Phase 4 — Real Incident Orchestration
-
-AegisOps notifies n8n once when a new incident is created. n8n routes by severity and rechecks authoritative incident state before investigation.
-
-Recovered incidents take the skip path:
-
-![n8n recovered incident follows the FALSE branch and is skipped](docs/screenshots/phase%204/n8n%2C%20false.png)
-
-Active incidents proceed into the shared Investigation Intake workflow:
-
-![n8n active incident follows the TRUE branch into the shared intake workflow](docs/screenshots/phase%204/n8n%2C%20true.png)
-
-See [Phase 4 implementation and verification](docs/phases/phase-04-workflow-orchestration.md).
-
----
-
-## Phase 5 — Evidence-Grounded LLM Investigation
-
-AegisOps turns an OPEN incident into a structured preliminary investigation. The backend collects current evidence, asks Gemini for observations, hypotheses, missing evidence, and suggested checks, validates the response, and stores it in PostgreSQL.
-
-![Successful n8n Investigation Intake execution with the Gemini HTTP request](docs/screenshots/phase%205/gemini.png)
-
-![Gemini investigation response with structured supporting evidence](docs/screenshots/phase%205/gemini-investigation-output.png)
-
-Saved investigations can be retrieved without another Gemini call.
-
-See [Phase 5 implementation and verification](docs/phases/phase-05-llm-investigation.md).
-
----
-
-## Phase 6 — Embeddings & Knowledge Base
-
-Phase 6 introduced a local knowledge store using SentenceTransformers and pgvector. Runbooks and sample documents are stored with normalized 384-dimensional embeddings and stable source keys.
-
-![Stored documents with 384-dimensional embeddings](docs/screenshots/phase%206/knowledge-base.png)
-
-See [Phase 6 implementation and verification](docs/phases/phase-06-embeddings-knowledge-base.md).
-
----
-
-## Phase 7 — RAG Pipeline
-
-Runbooks are split into heading-aware chunks and stored with local embeddings. Incident context is embedded and searched through pgvector before Gemini is called.
-
-![Top retrieved Redis runbook chunks](docs/screenshots/phase%207/retrieval.png)
-
-Returned `runbook_source_ids` are validated against the retrieved source IDs.
-
-![Validated RAG source references](docs/screenshots/phase%207/rag-validation.png)
-
-See [Phase 7 implementation and verification](docs/phases/phase-07-rag-pipeline.md).
-
----
-
-## Phase 8 — Reranking & Context Engineering
-
-A local cross-encoder reranks vector-search candidates so the final context is ordered by task relevance rather than vector similarity alone.
-
-![Before and after reranking](docs/screenshots/phase%208/reranking.png)
-
-The context builder keeps a bounded, duplicate-free set of excerpts and stores both retrieval and rerank scores.
-
-![Selected context and persisted scores](docs/screenshots/phase%208/context-engineering.png)
-
-See [Phase 8 implementation and verification](docs/phases/phase-08-reranking-context-engineering.md).
-
----
-
-## Phase 9 — Controlled Tool Calling
-
-Gemini can request additional evidence only through a fixed read-only dispatcher.
-
-Allowlisted tools cover:
+An OPEN incident can progress through:
 
 ```text
-incident records
-predefined Prometheus metrics
-benchmark Docker logs/state
+current incident evidence
+→ runbook vector retrieval
+→ cross-encoder reranking
+→ historical incident-memory retrieval
+→ Gemini decision node
+→ bounded read-only diagnostic tools
+→ structured report finalization
+→ PostgreSQL persistence
 ```
 
-The tool loop is bounded by execution-round and total-call limits.
-
-![Completed controlled tool calls](docs/screenshots/phase%209/tool-calls.png)
-
-![Evidence-based investigation report](docs/screenshots/phase%209/investigation-report.png)
-
-See [Phase 9 implementation and verification](docs/phases/phase-09-tool-calling-layer.md).
-
----
-
-## Phase 10 — Checkpointed LangGraph Investigation Agent
-
-Phase 10 replaced the manually managed tool loop with a checkpointed LangGraph StateGraph.
+Gemini can request only the fixed diagnostic catalog:
 
 ```text
-collect evidence
-→ retrieve/rerank runbooks
-→ ask Gemini whether more evidence is needed
-→ execute allowlisted tools
-→ loop conditionally
-→ finalize and persist a structured report
+get_incident
+get_metric
+get_service_logs
 ```
 
-![LangGraph execution and saved investigation](docs/screenshots/phase%2010/langgraph-execution.png)
+### Human-in-the-Loop Remediation
 
-See [Phase 10 implementation and verification](docs/phases/phase-10-langgraph-investigation-agent.md).
-
----
-
-## Phase 11 — Human-in-the-Loop Remediation
-
-Phase 11 created the authorization boundary between investigation and action.
-
-The backend can create a `PENDING` remediation proposal only for an OPEN incident with a matching saved investigation and an allowlisted action/target pair.
-
-![Phase 11 Investigation Intake approval workflow](docs/screenshots/phase%2011/updated_n8n_workflow.png)
-
-![Phase 11 human approval form](docs/screenshots/phase%2011/auth_form.png)
-
-Phase 12 subsequently moved approval orchestration away from the original n8n form while preserving backend-authoritative review state.
-
-See [Phase 11 implementation and safety boundaries](docs/phases/phase-11-human-in-the-loop-remediation.md).
-
----
-
-## Phase 12 — Automated Remediation
-
-Phase 12 turns an approved proposal into a controlled infrastructure action.
-
-For every new execution, FastAPI revalidates:
+For every remediation execution, FastAPI revalidates:
 
 ```text
 proposal status
-authorization window
+authorization state
 incident state
 allowlisted action
-exact target service
+exact target
 ```
 
 Gemini and n8n never provide arbitrary shell commands.
 
-The backend persists execution state in `remediation_executions`, and duplicate execution requests reuse the existing result instead of repeating the infrastructure action.
+### Recovery Verification
 
-![Phase 12 callback-driven workflow](docs/screenshots/phase%2012/n8n_updated.png)
+Execution success and service recovery are separate states.
 
-See [Phase 12 implementation, callback architecture and verification](docs/phases/phase-12-automated-remediation.md).
-
----
-
-## Phase 13 — Recovery Verification
-
-Phase 13 separates **command success** from **service recovery**.
-
-A `SUCCEEDED` remediation execution does not automatically mean the original incident condition recovered. AegisOps independently re-evaluates the original monitoring rule through Prometheus.
-
-Supported recovery states:
+Recovery verification supports:
 
 ```text
 VERIFYING
@@ -349,133 +194,86 @@ NOT_RECOVERED
 INCONCLUSIVE
 ```
 
-Current policy:
+### Postmortem and Incident Memory
 
-```text
-maximum attempts          = 3
-required healthy checks   = 2 consecutive checks
-n8n wait between checks   = 15 seconds
-```
+Resolved incidents produce a deterministic lifecycle reconstruction before Gemini generates a structured postmortem.
 
-![Phase 13 final n8n recovery verification workflow](docs/screenshots/phase%2013/n8n_final.png)
-
-![Phase 13 recovery verification proof](docs/screenshots/phase%2013/recovery%20proof.png)
-
-See [Phase 13 implementation and verification](docs/phases/phase-13-recovery-verification.md).
-
----
-
-## Phase 14 — Postmortem & Incident Memory
-
-Phase 14 adds the learning layer after verified recovery.
-
-The central rule is:
-
-```text
-deterministic facts != LLM interpretation
-```
-
-AegisOps reconstructs the incident lifecycle from PostgreSQL and only then asks Gemini to generate a structured postmortem.
-
-Canonical postmortems are stored in:
-
-```text
-incident_postmortems
-```
-
-Compact reusable operational memory is stored in:
-
-```text
-incident_memories
-```
-
-Incident memory uses:
+Reusable incident memory is embedded with:
 
 ```text
 sentence-transformers/all-MiniLM-L6-v2
 dimensions = 384
 ```
 
-Historical similarity is treated as reference material rather than proof of the current root cause.
+Historical similarity is reference material only, not proof of root cause.
 
-![Phase 14 complete n8n workflow](docs/screenshots/phase%2014/phase%2014%20n8n.png)
+### Operator Dashboard
 
-![Phase 14 postmortem and incident-memory database verification](docs/screenshots/phase%2014/postmortem_db_verification.png)
-
-See [Phase 14 implementation and verification](docs/phases/phase-14-postmortem-incident-memory.md).
-
----
-
-## Phase 15 — Operator Dashboard
-
-Phase 15 replaced the temporary embedded operator surface with a dedicated Next.js control plane for operators.
-
-The dashboard exposes the existing backend workflow without moving authority into the browser.
-
-### Operator surfaces
+The Next.js operator UI exposes:
 
 ```text
-/
-├── live operations overview
-├── service health
-├── incident activity
-├── response pipeline
-└── recent incidents
-
-/incidents
-├── incident history
-└── /incidents/{id} deterministic lifecycle timeline
-
-/investigations
-└── saved LangGraph investigation reports
-
-/remediation
-└── pending and historical human-review decisions
-
-/postmortems
-└── generated postmortems and incident-memory summaries
+live operations overview
+service health
+incident history
+incident detail + deterministic timeline
+saved investigations
+human remediation review
+execution and recovery state
+postmortems
 ```
 
-### Server-side trust boundary
+Sensitive operator and remediation credentials remain server-side.
 
-Dashboard credentials remain server-side.
+### Evals and Observability
+
+Phase 16 adds deterministic evaluation for persisted investigations.
+
+Checks include:
 
 ```text
-Browser
-  ↓
-Next.js server component / server action
-  ↓
-authenticated FastAPI endpoint
-  ↓
-backend validation + PostgreSQL
+report schema validity
+incident/evidence consistency
+runbook-source grounding
+tool allowlist compliance
+incident scope enforcement
+tool budget compliance
+tool execution health
+confidence/evidence consistency
+golden-case expectations
 ```
 
-The browser does not receive:
+Evaluation results are persisted in:
 
-- operator backend credentials
-- remediation review secrets
-- remediation execution secrets
-- signed n8n callback URLs
+```text
+eval_runs
+eval_results
+```
 
-Human review remains a backend-authoritative action.
+AegisOps also exports agent metrics through:
 
-### Dashboard verification
+```text
+GET /metrics
+```
 
-The final interface was tested against real persisted AegisOps data and controlled benchmark dependency failures.
+Primary metrics:
 
-The service-health panel reflects direct service/container state, while incident counts reflect formally detected incident records. These may briefly differ because dependency monitoring, Prometheus scraping, and the incident worker operate on independent cadences.
+```text
+aegisops_investigation_runs_total
+aegisops_investigation_duration_seconds
+aegisops_gemini_calls_total
+aegisops_gemini_call_duration_seconds
+aegisops_tool_calls_total
+aegisops_tool_rounds_total
+aegisops_investigation_limit_reached_total
+aegisops_rag_chunks_selected
+aegisops_historical_incidents_selected
+```
 
-![Phase 15 operator dashboard](docs/screenshots/phase%2015/Home.png)
+Prometheus scrapes these metrics and Grafana visualizes them in the **AegisOps Agent Observability** dashboard.
 
-![Phase 15 incidents](docs/screenshots/phase%2015/incidents.png)
+![AegisOps Agent Observability](docs/screenshots/phase%2016/grafana.png)
 
-![Phase 15 investigations](docs/screenshots/phase%2015/investigations.png)
-
-![Phase 15 remediation](docs/screenshots/phase%2015/remidation.png)
-
-![Phase 15 postmortems](docs/screenshots/phase%2015/postmortems.png)
-
-See [Phase 15 implementation and verification](docs/phases/phase-15-operator-dashboard.md).
+See [Phase 16 implementation and verification](docs/phases/phase-16-evals-observability.md).
 
 ---
 
@@ -488,10 +286,12 @@ AegisOps/
 │   ├── app/
 │   │   ├── core/
 │   │   ├── db/
+│   │   ├── evals/
 │   │   ├── incidents/
 │   │   ├── investigations/
 │   │   ├── knowledge/
 │   │   ├── monitoring/
+│   │   ├── observability/
 │   │   ├── orchestration/
 │   │   ├── dashboard_routes.py
 │   │   ├── operator_routes.py
@@ -504,42 +304,21 @@ AegisOps/
 │   │   ├── postmortem_schemas.py
 │   │   ├── postmortem_service.py
 │   │   └── main.py
-│   ├── sql/
+│   ├── evals/
 │   ├── scripts/
+│   ├── sql/
 │   ├── tests/
 │   └── requirements.txt
 │
 ├── benchmark/
-│
 ├── dashboard/
-│   ├── app/
-│   │   ├── incidents/
-│   │   ├── investigations/
-│   │   ├── remediation/
-│   │   ├── postmortems/
-│   │   ├── globals.css
-│   │   ├── layout.tsx
-│   │   └── page.tsx
-│   ├── components/
-│   ├── lib/
-│   │   └── aegisops.ts
-│   ├── public/
-│   ├── package.json
-│   └── next.config.ts
-│
 ├── monitoring/
-│
+│   ├── grafana/
+│   └── prometheus.yml
 ├── docs/
 │   ├── phases/
-│   │   ├── phase-00-project-foundation.md
-│   │   ├── ...
-│   │   ├── phase-14-postmortem-incident-memory.md
-│   │   └── phase-15-operator-dashboard.md
 │   ├── runbooks/
 │   └── screenshots/
-│       ├── phase 14/
-│       └── phase 15/
-│
 ├── workflows/
 ├── .env.example
 ├── .gitignore
@@ -551,8 +330,6 @@ AegisOps/
 
 ## Core Technologies
 
-### Current
-
 - Python 3.12
 - FastAPI
 - Uvicorn
@@ -560,10 +337,10 @@ AegisOps/
 - pgvector
 - Redis
 - psycopg
-- httpx
 - Docker
 - Docker Compose
 - Prometheus
+- prometheus-client
 - cAdvisor
 - Grafana
 - n8n
@@ -580,25 +357,16 @@ AegisOps/
 - Lucide icons
 - React Icons
 
-### Remaining Roadmap
-
-- Phase 16 — Evals & Observability
-- Phase 17 — Connector Architecture
-- Phase 18 — AWS Integration & Real Test Case
-- Phase 19 — Velora Integration & Real Test Case
-- Phase 20 — Hardening & Portfolio Packaging
-
-Technologies are introduced only when their phase has a real architectural need.
-
 ---
 
-## AegisOps Backend
+## Backend Endpoints
 
-Current core endpoint families include:
+Primary endpoint families include:
 
 ```text
 GET  /health
 GET  /ready
+GET  /metrics
 
 GET  /incidents
 POST /incidents/detect
@@ -633,11 +401,11 @@ GET  /dashboard/api/remediations
 GET  /dashboard/api/postmortems
 ```
 
-`/health` confirms that FastAPI is alive.
+`/health` confirms FastAPI is alive.
 
-`/ready` verifies connectivity to AegisOps PostgreSQL.
+`/ready` verifies PostgreSQL connectivity.
 
-The dashboard API exposes operator-safe aggregated views while keeping sensitive credentials and remediation execution capabilities server-side.
+`/metrics` exports AegisOps runtime telemetry for Prometheus.
 
 ---
 
@@ -650,69 +418,34 @@ The dashboard API exposes operator-safe aggregated views while keeping sensitive
 | HTTP 5xx rate high | `> 0.05 req/s` | MEDIUM |
 | API P95 latency high | `> 2.0 s` | MEDIUM |
 
-Rules define measurable unhealthy conditions. They do not hardcode root-cause conclusions.
+Rules define measurable unhealthy conditions and do not hardcode root-cause conclusions.
 
 ---
 
-## Incident State & Deduplication
+## Evaluation Model
 
-Current incident lifecycle:
-
-```text
-OPEN
-RESOLVED
-```
-
-An active incident fingerprint is based on:
+Golden cases are stored under:
 
 ```text
-service + rule_key
+backend/app/evals/golden_cases.json
 ```
 
-While a condition remains unhealthy, future detection cycles update the existing OPEN incident instead of creating duplicates.
-
-Recovery verification has its own state machine:
+Current cases cover:
 
 ```text
-VERIFYING
-RECOVERED
-NOT_RECOVERED
-INCONCLUSIVE
+postgresql_unavailable
+redis_unavailable
+http_5xx_rate_high
+api_latency_high
 ```
 
-This keeps incident state and verification evidence related but distinct.
+The evaluator measures behavior and grounding rather than exact LLM wording.
 
 ---
 
-## Benchmark API
+## Monitoring and Observability
 
-The benchmark environment exposes controlled targets such as:
-
-```text
-GET  /health
-GET  /ready
-POST /items
-GET  /items
-GET  /activity
-GET  /simulate/error
-GET  /simulate/slow
-GET  /metrics
-```
-
-The benchmark can simulate:
-
-- PostgreSQL outage
-- Redis outage
-- HTTP 500 errors
-- artificial API latency
-
-This provides known failure conditions without coupling AegisOps to a production application.
-
----
-
-## Monitoring Metrics
-
-Custom benchmark metrics include:
+Benchmark telemetry includes:
 
 ```text
 benchmark_http_requests_total
@@ -720,47 +453,27 @@ benchmark_http_request_duration_seconds
 benchmark_dependency_up
 ```
 
-Prometheus also receives container telemetry through cAdvisor.
-
-AegisOps queries Prometheus directly for incident detection, investigation evidence, and recovery verification.
-
----
-
-## Knowledge Base, RAG & Incident Memory
-
-Runbooks and embeddings are stored locally in AegisOps PostgreSQL.
-
-`knowledge_documents` stores complete documents, while `knowledge_chunks` stores embedded sections linked to their source documents.
-
-Runbook retrieval uses:
+AegisOps agent telemetry includes:
 
 ```text
-incident context
-→ vector retrieval
-→ cross-encoder reranking
-→ bounded context selection
+investigation runs and outcomes
+investigation duration
+Gemini calls and latency
+tool calls and statuses
+tool rounds
+budget exhaustion
+RAG context size
+historical incident-memory context size
 ```
 
-Historical incident retrieval adds:
+Grafana provides two engineering views:
 
 ```text
-resolved incident
-→ structured postmortem
-→ compact incident memory
-→ 384-dimensional embedding
-→ pgvector similarity search
-→ historical context for future investigations
+AegisOps Benchmark Monitoring
+AegisOps Agent Observability
 ```
 
-Future investigations therefore receive:
-
-```text
-runbook knowledge
-+
-similar historical incidents
-```
-
-Historical incidents remain supporting context only. They are never treated as proof that a new incident has the same initiating cause.
+The Next.js dashboard remains separate because it serves operator workflows rather than engineering telemetry.
 
 ---
 
@@ -792,27 +505,15 @@ AEGISOPS_OPERATOR_USERNAME=
 AEGISOPS_OPERATOR_PASSWORD=
 ```
 
-Keep actual credentials only in untracked environment files.
-
-Never commit:
-
-- Gemini API keys
-- remediation review/execution keys
-- operator credentials
-- signed n8n resume URLs
-- production secrets
-- raw sensitive logs
+Keep real credentials only in untracked environment files.
 
 ---
 
 ## Local Services
 
-Typical development endpoints:
-
 ```text
 AegisOps backend       http://127.0.0.1:8000
 Operator Dashboard     http://localhost:3001
-Legacy Operator Route  http://127.0.0.1:8000/operator
 Benchmark API          http://127.0.0.1:8001
 cAdvisor               http://127.0.0.1:8080
 Prometheus             http://127.0.0.1:9090
@@ -824,7 +525,7 @@ n8n                     http://127.0.0.1:5678
 
 ## Quick Start
 
-Create a local backend environment file:
+Create the local environment file:
 
 ```powershell
 Copy-Item .env.example .env
@@ -836,16 +537,10 @@ Start Docker services:
 docker compose up -d --build
 ```
 
-Check the stack:
-
-```powershell
-docker compose ps
-```
-
 Apply database migrations through:
 
 ```text
-010_create_incident_memories.sql
+011_create_eval_tables.sql
 ```
 
 Start FastAPI:
@@ -857,14 +552,14 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Start n8n separately and publish:
+Publish the n8n workflows:
 
 ```text
 AegisOps Incident Orchestration
 AegisOps Investigation Intake
 ```
 
-Start the dashboard:
+Start the operator dashboard:
 
 ```powershell
 cd dashboard
@@ -872,34 +567,26 @@ npm install
 npm run dev -- -p 3001
 ```
 
-The dashboard expects server-only credentials in:
-
-```text
-dashboard/.env.local
-```
-
 ---
 
-## Development Approach
-
-AegisOps is intentionally built phase by phase.
-
-Project rules include:
+## Development Principles
 
 - introduce a technology only when a phase genuinely needs it
 - keep the benchmark environment separate from the AegisOps core
 - avoid hardcoded diagnoses
 - prefer deterministic logic when deterministic logic is the better tool
 - gather objective evidence before model reasoning
-- distinguish observed mechanisms from unproven initiating root causes
+- distinguish observations from unproven root causes
 - keep infrastructure mutation human-approved
 - keep execution actions allowlisted
 - preserve backend authority across workflow and UI boundaries
-- keep command execution success separate from recovery verification
+- keep command success separate from recovery verification
 - keep historical similarity separate from current root-cause proof
-- avoid repeated Gemini calls when persisted/checkpointed results can support downstream work
+- avoid repeated Gemini calls when persisted/checkpointed results can be reused
+- evaluate behavior instead of exact model wording
+- expose agent execution through metrics rather than hidden logs alone
 - prefer meaningful end-of-phase verification over excessive micro-testing
-- document each completed phase with architecture, verification evidence, and representative screenshots
+- document completed phases with representative evidence
 
 ---
 
@@ -913,7 +600,7 @@ Project rules include:
 - [Phase 5 — LLM Investigation v1](docs/phases/phase-05-llm-investigation.md)
 - [Phase 6 — Embeddings & Knowledge Base](docs/phases/phase-06-embeddings-knowledge-base.md)
 - [Phase 7 — RAG Pipeline](docs/phases/phase-07-rag-pipeline.md)
-- [Phase 8 — Reranking & Context Engineering](docs/phases/phase-08-reranking-context-engineering.md)
+- [Phase 8 — Reranking & Context Engineering](docs/phases/phase-08-context-engineering.md)
 - [Phase 9 — Tool Calling Layer](docs/phases/phase-09-tool-calling-layer.md)
 - [Phase 10 — LangGraph Investigation Agent](docs/phases/phase-10-langgraph-investigation-agent.md)
 - [Phase 11 — Human-in-the-Loop Remediation](docs/phases/phase-11-human-in-the-loop-remediation.md)
@@ -921,88 +608,52 @@ Project rules include:
 - [Phase 13 — Recovery Verification](docs/phases/phase-13-recovery-verification.md)
 - [Phase 14 — Postmortem & Incident Memory](docs/phases/phase-14-postmortem-incident-memory.md)
 - [Phase 15 — Operator Dashboard](docs/phases/phase-15-operator-dashboard.md)
+- [Phase 16 — Evals & Observability](docs/phases/phase-16-evals-observability.md)
 
 ---
 
-## Current Milestone
-
-The verified architecture now provides an operator-visible lifecycle:
+## Remaining Roadmap
 
 ```text
-Controlled benchmark outage
-        ↓
-Prometheus + deterministic incident detection
-        ↓
-Durable OPEN incident
-        ↓
-n8n severity routing + live incident recheck
-        ↓
-Checkpointed LangGraph investigation
-        ↓
-Runbook RAG + reranking + historical incident memory
-        ↓
-Bounded read-only diagnostic tools
-        ↓
-Structured investigation saved in PostgreSQL
-        ↓
-Backend-created allowlisted remediation proposal
-        ↓
-Operator reviews proposal in Next.js dashboard
-        ↓
-Next.js server action calls authenticated backend review endpoint
-        ↓
-Backend persists APPROVED / REJECTED
-        ↓
-APPROVED only
-        ↓
-Protected remediation execution
-        ↓
-Backend revalidates action, target, incident and authorization
-        ↓
-Fixed Docker Compose recovery action
-        ↓
-Persistent execution audit
-        ↓
-Bounded Prometheus recovery verification
-        ↓
-RECOVERED
-        ↓
-Deterministic incident lifecycle reconstruction
-        ↓
-Grounded Gemini postmortem
-        ↓
-Canonical postmortem persistence
-        ↓
-384-dimensional incident-memory embedding
-        ↓
-Historical memory available to future investigations
-        ↓
-Dashboard exposes the persisted operational lifecycle
+Phase 17 — Connector Architecture
+Phase 18 — AWS Integration & Real Test Case
+Phase 19 — Velora Integration & Real Test Case
+Phase 20 — Hardening & Portfolio Packaging
 ```
 
-### Phase 15 verification
+---
 
-Phase 15 confirmed that the final operator dashboard can expose live and persisted AegisOps state without duplicating backend logic.
+## Phase 16 Verification
 
-The verified UI includes:
+A persisted investigation passed the golden evaluation with:
 
 ```text
-live service-health overview
-incident activity
-incident history
-incident detail + deterministic timeline
-saved investigations
-human remediation review
-execution/recovery state
-postmortem browsing
+score = 0.9333
+14 / 15 checks passed
 ```
 
-Representative evidence is stored under:
+A real Redis failure populated the observability dashboard with:
 
 ```text
-docs/screenshots/phase 15/
+1 completed investigation
+~32 second investigation duration
+2 tool rounds
+0 budget-limit events
+3 Gemini decision calls
+1 structured-report call
+2 successful diagnostic tool calls
+3 selected RAG chunks
+3 selected historical memories
 ```
 
-Phase 15 therefore completes the human-facing operational layer while preserving the same safety boundaries introduced in Phases 11–14.
+Representative evidence:
 
-**Next: Phase 16 — Evals & Observability.**
+```text
+docs/screenshots/phase 16/grafana.png
+```
+
+![Phase 16 Grafana agent observability](docs/screenshots/phase%2016/grafana.png)
+
+Phase 16 completes the evaluation and observability layer without weakening the existing human-approval or backend-authority boundaries.
+
+**Next: Phase 17 — Connector Architecture.**

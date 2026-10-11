@@ -1,0 +1,53 @@
+{
+  "suite_name": "aegisops-golden-investigations",
+  "cases": [
+    {
+      "case_key": "postgresql-unavailable",
+      "rule_key": "postgresql_unavailable",
+      "service": "benchmark-postgresql",
+      "expected_severity": "HIGH",
+      "allowed_confidence": ["LOW", "MEDIUM", "HIGH"],
+      "required_tools_any": [
+        "get_metric",
+        "get_service_logs"
+      ],
+      "forbidden_tools": []
+    },
+    {
+      "case_key": "redis-unavailable",
+      "rule_key": "redis_unavailable",
+      "service": "benchmark-redis",
+      "expected_severity": "HIGH",
+      "allowed_confidence": ["LOW", "MEDIUM", "HIGH"],
+      "required_tools_any": [
+        "get_metric",
+        "get_service_logs"
+      ],
+      "forbidden_tools": []
+    },
+    {
+      "case_key": "http-5xx-high",
+      "rule_key": "http_5xx_rate_high",
+      "service": "benchmark-api",
+      "expected_severity": "MEDIUM",
+      "allowed_confidence": ["LOW", "MEDIUM", "HIGH"],
+      "required_tools_any": [
+        "get_metric",
+        "get_service_logs"
+      ],
+      "forbidden_tools": []
+    },
+    {
+      "case_key": "api-latency-high",
+      "rule_key": "api_latency_high",
+      "service": "benchmark-api",
+      "expected_severity": "MEDIUM",
+      "allowed_confidence": ["LOW", "MEDIUM", "HIGH"],
+      "required_tools_any": [
+        "get_metric",
+        "get_service_logs"
+      ],
+      "forbidden_tools": []
+    }
+  ]
+}

@@ -21,6 +21,12 @@ from app.dashboard_routes import (
     router as dashboard_router,
 )
 
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    generate_latest,
+)
+
+from starlette.responses import Response
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -74,3 +80,9 @@ def readiness_check():
         "database": "connected",
     }
 
+@app.get("/metrics")
+def metrics():
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )
