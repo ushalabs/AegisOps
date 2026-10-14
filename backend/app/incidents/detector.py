@@ -1,10 +1,13 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from app.incidents.rules import INCIDENT_RULES, IncidentRule
-from app.monitoring.prometheus import (
-    PrometheusError,
-    prometheus_client,
+from app.connectors import (
+    ConnectorStatus,
+    connector_registry,
+)
+from app.incidents.rules import (
+    INCIDENT_RULES,
+    IncidentRule,
 )
 
 
@@ -19,40 +22,51 @@ class DetectionResult:
     threshold: float
 
 
-def extract_metric_value(result: list[dict]) -> Optional[float]:
-    if not result:
-        return None
+def evaluate_rule(
+    rule: IncidentRule,
+) -> DetectionResult:
+    connector = (
+        connector_registry.resolve(
+            connector_key=(
+                rule.connector_key
+            ),
+            service=(
+                rule.service
+            ),
+        )
+    )
 
-    try:
-        raw_value = result[0]["value"][1]
-        return float(raw_value)
+    signal = connector.get_signal(
+        signal_key=rule.key,
+        service=rule.service,
+    )
 
-    except (KeyError, IndexError, TypeError, ValueError):
-        return None
-
-
-def evaluate_rule(rule: IncidentRule) -> DetectionResult:
-    try:
-        result = prometheus_client.query(rule.promql)
-        value = extract_metric_value(result)
-
-    except PrometheusError:
+    if (
+        signal.status
+        != ConnectorStatus.OK
+    ):
         return DetectionResult(
             rule_key=rule.key,
             title=rule.title,
             service=rule.service,
-            severity=rule.severity.value,
+            severity=(
+                rule.severity.value
+            ),
             triggered=False,
             value=None,
             threshold=rule.threshold,
         )
+
+    value = signal.first_value
 
     if value is None:
         return DetectionResult(
             rule_key=rule.key,
             title=rule.title,
             service=rule.service,
-            severity=rule.severity.value,
+            severity=(
+                rule.severity.value
+            ),
             triggered=False,
             value=None,
             threshold=rule.threshold,
@@ -62,15 +76,25 @@ def evaluate_rule(rule: IncidentRule) -> DetectionResult:
         rule_key=rule.key,
         title=rule.title,
         service=rule.service,
-        severity=rule.severity.value,
-        triggered=rule.is_triggered(value),
+        severity=(
+            rule.severity.value
+        ),
+        triggered=(
+            rule.is_triggered(
+                value
+            )
+        ),
         value=value,
         threshold=rule.threshold,
     )
 
 
-def evaluate_all_rules() -> list[DetectionResult]:
+def evaluate_all_rules(
+) -> list[DetectionResult]:
     return [
-        evaluate_rule(rule)
-        for rule in INCIDENT_RULES
+        evaluate_rule(
+            rule
+        )
+        for rule
+        in INCIDENT_RULES
     ]

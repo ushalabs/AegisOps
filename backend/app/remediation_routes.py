@@ -1192,8 +1192,8 @@ def execute_approved_proposal(
             ),
         )
 
-    # Docker is intentionally executed outside
-    # the DB transaction.
+    # External remediation is intentionally
+    # executed outside the DB transaction.
     result = execute_remediation_action(
         proposal["action_key"]
     )

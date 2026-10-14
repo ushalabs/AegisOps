@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/screenshots/banner.png" alt="AegisOps — AI-Assisted Incident Operations" width="100%" />
+  <img src="docs/screenshots/aegisops_ai_incident_operations.png" alt="AegisOps — AI-Assisted Incident Operations" width="100%" />
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 
 **AegisOps** is an AI-assisted incident operations platform designed to move an incident from detection to verified recovery without giving the model direct infrastructure authority.
 
-It combines deterministic monitoring, LangGraph-based investigation, RAG over operational runbooks, read-only diagnostic tools, human approval, allowlisted remediation, recovery verification, postmortems, and incident memory into one auditable workflow.
+It combines deterministic monitoring, LangGraph-based investigation, RAG over operational runbooks, read-only diagnostic tools, human approval, allowlisted remediation, recovery verification, postmortems, incident memory, and a connector layer for integrating different operational environments.
 
 ```text
 Detect
@@ -38,9 +38,9 @@ Detect
   → Store reusable incident memory
 ```
 
-> **Current status:** Core platform and local validation complete.
-> **Now:** Phase 17 — Connector Architecture
-> **Next:** AWS and Velora real-world integrations.
+> **Current status:** Core platform, local validation, and connector architecture complete.
+> **Now:** Phase 18 — AWS Integration & Real Test Case
+> **Next:** Velora integration and final portfolio hardening.
 
 ---
 
@@ -161,7 +161,26 @@ flowchart LR
     PROM --> GRAFANA[Grafana]
 ```
 
-The current benchmark environment is intentionally separate from the AegisOps core. Phase 17 moves benchmark-specific telemetry, log access, remediation, and recovery behavior behind connector contracts so the same core can support AWS, Velora, and future systems.
+The benchmark environment is now connected to the AegisOps core through a registry-based connector layer. Benchmark-specific Prometheus queries, Docker log access, service mappings, and restart actions live behind `BenchmarkConnector`, while the core continues to own incident policy, approval, authorization, and recovery decisions.
+
+### Connector Architecture
+
+```text
+AegisOps Core
+    ↓
+Connector Registry
+    ↓
+Environment Connector
+    ├── telemetry
+    ├── logs
+    └── approved remediation execution
+```
+
+Incident rules declare a `connector_key`, and detection, LangGraph evidence collection, diagnostic tools, remediation execution, and recovery verification resolve environment-specific behavior through the connector registry.
+
+This keeps the incident lifecycle independent from the target infrastructure. Phase 18 can add AWS support by introducing an AWS connector rather than rewriting the investigation, approval, remediation, or recovery pipeline.
+
+Remediation remains defense-in-depth: the AegisOps remediation catalog authorizes the logical action, and the selected connector independently validates the concrete action and target service before execution.
 
 ---
 
@@ -271,12 +290,13 @@ This gives AegisOps two separate views:
 
 |Area | Implementation |
 |---|---|
-| **Detection** | Deterministic Prometheus rules with incident deduplication |
+| **Detection** | Deterministic incident rules routed through environment connectors |
 | **Investigation** | Checkpointed LangGraph agent with Gemini |
 | **Knowledge** | pgvector RAG + local embeddings + cross-encoder reranking |
-| **Diagnostics** | Validated, read-only, allowlisted tool calling |
-| **Remediation** | Human-approved, backend-controlled, predefined actions |
-| **Recovery** | Independent monitoring-based verification |
+| **Diagnostics** | Validated, read-only, connector-backed tool calling |
+| **Remediation** | Human-approved, backend-controlled, connector-executed predefined actions |
+| **Recovery** | Independent connector-backed telemetry verification |
+| **Connectors** | Registry-based abstraction for telemetry, logs, and remediation |
 | **Learning** | Structured postmortems + vectorized incident memory |
 | **Evaluation** | Deterministic checks + golden incident cases |
 | **Observability** | Prometheus metrics + Grafana agent dashboard |
@@ -313,7 +333,7 @@ API P95 latency elevated
 
 These provide known test conditions without pretending the benchmark environment is production infrastructure.
 
-The next integration stages move AegisOps toward real deployed systems through connector-based telemetry and remediation.
+The incident-response core can now be extended with new connectors instead of embedding environment-specific logic throughout the application.
 
 ---
 
@@ -336,9 +356,9 @@ The next integration stages move AegisOps toward real deployed systems through c
 ✅ Postmortem + incident memory
 ✅ Next.js operator dashboard
 ✅ Evals + agent observability
+✅ Connector architecture
 
-🚧 Connector architecture
-⏳ AWS integration + real test case
+🚧 AWS integration + real test case
 ⏳ Velora integration + real test case
 ⏳ Final hardening + portfolio packaging
 ```
@@ -408,7 +428,7 @@ docs/screenshots/
 
 Latest completed phase:
 
-- [Phase 16 — Evals & Observability](docs/phases/phase-16-evals-observability.md)
+- [Phase 17 — Connector Architecture](docs/phases/phase-17-connector-architecture.md)
 
 Previous major milestones:
 
@@ -418,16 +438,16 @@ Previous major milestones:
 - [Phase 13 — Recovery Verification](docs/phases/phase-13-recovery-verification.md)
 - [Phase 14 — Postmortem & Incident Memory](docs/phases/phase-14-postmortem-incident-memory.md)
 - [Phase 15 — Operator Dashboard](docs/phases/phase-15-operator-dashboard.md)
+- [Phase 16 — Evals & Observability](docs/phases/phase-16-evals-observability.md)
 
 ---
 
 ## Roadmap
 
 ```text
-Phase 17 — Connector Architecture
 Phase 18 — AWS Integration & Real Test Case
 Phase 19 — Velora Integration & Real Test Case
 Phase 20 — Hardening & Portfolio Packaging
 ```
 
-AegisOps is moving from a fully validated local incident-response platform toward connector-based real-world integrations.
+AegisOps now has a connector boundary between its incident-response core and target infrastructure. Phase 18 will use that boundary for the first real AWS integration.
