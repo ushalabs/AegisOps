@@ -1,0 +1,47 @@
+name: Module 3 - Contexts and Conditionals
+
+on:
+  push:
+    paths:
+      - ".github/workflows/module3-contexts.yml"
+  workflow_dispatch:
+
+env:
+  LAB_STAGE: "Module 3"
+
+jobs:
+  inspect-contexts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Display Context Objects
+        env:
+          ACTOR: ${{ github.actor }}
+          EVENT: ${{ github.event_name }}
+          OS: ${{ runner.os }}
+          LAB_VAR: ${{ vars.LAB_MESSAGE || 'Not configured yet' }}
+        run: |
+          echo "GitHub Actor: $ACTOR"
+          echo "Event Name: $EVENT"
+          echo "Runner OS: $OS"
+          echo "Environment: $LAB_STAGE"
+          echo "Repository Variable: $LAB_VAR"
+
+      - name: Contains Condition
+        if: ${{ contains(github.ref, 'main') }}
+        run: echo "Running on main branch"
+
+      - name: Success Condition
+        if: ${{ success() }}
+        run: echo "Previous steps succeeded"
+
+      - name: Failure Condition
+        if: ${{ failure() }}
+        run: echo "Previous step failed"
+
+      - name: Always Condition
+        if: ${{ always() }}
+        run: echo "Always executed"
