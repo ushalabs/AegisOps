@@ -1,0 +1,21 @@
+name: Module 5B - Self Hosted Runner
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-machine:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, windows, x64, devops-lab]
+
+    steps:
+      - name: Test Local Runner
+        shell: pwsh
+        run: |
+          Write-Host "Running on Self Hosted Runner!"
+          hostname
+          Write-Host "Operating System:"
+          [System.Environment]::OSVersion.VersionString
