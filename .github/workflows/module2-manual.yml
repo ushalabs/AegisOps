@@ -1,0 +1,34 @@
+name: Module 2C - Manual Trigger
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: "Your name"
+        required: true
+        type: string
+      greeting:
+        description: "Greeting message"
+        required: true
+        default: "Hello"
+        type: string
+      data:
+        description: "Additional information"
+        required: false
+        default: "DevOps Lab"
+        type: string
+
+jobs:
+  manual-job:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Display Input Values
+        env:
+          USER_NAME: ${{ inputs.name }}
+          GREETING: ${{ inputs.greeting }}
+          DATA: ${{ inputs.data }}
+        run: |
+          echo "$GREETING, $USER_NAME"
+          echo "Data: $DATA"
+          echo "Event: ${{ github.event_name }}"
