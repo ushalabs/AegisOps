@@ -1,0 +1,107 @@
+
+name: Module 6 - Matrix Cache and Services
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # MODULE 6A - MATRIX BUILDS
+  matrix-build:
+    name: Matrix - ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [20, 22]
+
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Verify OS and Node.js
+        shell: bash
+        run: |
+          echo "OS: $RUNNER_OS"
+          node --version
+          npm --version
+
+  # MODULE 6B - DEPENDENCY CACHING
+  dependency-cache:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Restore npm Cache
+        id: npm-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: module6-npm-linux-node22-v1
+
+      - name: Install Example Dependency
+        run: |
+          mkdir -p /tmp/module6-test
+          cd /tmp/module6-test
+          npm init -y
+          npm install lodash@4.17.21
+          node -e "console.log(require('lodash').VERSION)"
+
+      - name: Show Cache Status
+        run: echo "Cache hit = ${{ steps.npm-cache.outputs.cache-hit }}"
+
+  # MODULE 6C - REDIS SERVICE CONTAINER
+  redis-service:
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Inspect Redis Container
+        run: docker ps
+
+      - name: Test Redis Connection
+        run: |
+          python -m pip install redis==5.2.1
+          python - <<'PY'
+          import redis
+
+          client = redis.Redis(
+              host="localhost",
+              port=6379,
+              decode_responses=True
+          )
+
+          assert client.ping()
+          client.set("aegisops:module6", "working")
+
+          result = client.get("aegisops:module6")
+          assert result == "working"
+
+          print("Redis PING/SET/GET test: PASSED")
+          print("Stored value:", result)
+          PY
