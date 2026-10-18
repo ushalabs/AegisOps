@@ -1,0 +1,23 @@
+name: Module 7 - Custom JavaScript Action
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  custom-action-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Execute Custom Action
+        id: greeting
+        uses: ushalabs/devops-greeting-action@v1.0.0
+        with:
+          who-to-greet: "M. Usman"
+
+      - name: Display Action Output
+        env:
+          MESSAGE: ${{ steps.greeting.outputs.greeting }}
+        run: echo "$MESSAGE"
