@@ -1,0 +1,18 @@
+name: Module 2D - Repository Dispatch
+
+on:
+  repository_dispatch:
+    types: [custom-webhook]
+
+jobs:
+  webhook-job:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify Webhook Trigger
+        env:
+          SOURCE: ${{ github.event.client_payload.source }}
+        run: |
+          echo "External webhook received!"
+          echo "Event: ${{ github.event_name }}"
+          echo "Source: $SOURCE"
