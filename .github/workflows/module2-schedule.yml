@@ -1,0 +1,16 @@
+name: Module 2B - Cron Schedule
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+
+jobs:
+  scheduled-job:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify Scheduled Trigger
+        run: |
+          echo "Scheduled workflow executed!"
+          echo "Event: ${{ github.event_name }}"
+          date -u
