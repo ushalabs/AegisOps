@@ -1,0 +1,18 @@
+name: Module 2A - Push and PR
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  verify-events:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Display Trigger Information
+        run: |
+          echo "Event: ${{ github.event_name }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Triggered by: ${{ github.actor }}"
